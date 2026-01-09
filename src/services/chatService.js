@@ -218,17 +218,7 @@ class ChatService {
     }
   }
 
-  clearConversation() {
-    this.currentConversation = null
-  }
 
-  getConversationId() {
-    return this.currentConversation
-  }
-
-  setUserId(userId) {
-    this.userId = userId
-  }
 }
 
 export const chatService = new ChatService()

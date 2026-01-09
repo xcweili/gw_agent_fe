@@ -10,10 +10,6 @@
         </span>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="profile">
-              <el-icon><User /></el-icon>
-              个人中心
-            </el-dropdown-item>
             <el-dropdown-item command="agents">
               <el-icon><Grid /></el-icon>
               智能体管理
@@ -34,14 +30,13 @@
 </template>
 
 <script>
-import { ArrowDown, User, Grid, SwitchButton, Setting } from '@element-plus/icons-vue'
+import { ArrowDown, Grid, SwitchButton, Setting } from '@element-plus/icons-vue'
 import { authService } from './services/authService'
 
 export default {
   name: 'App',
   components: {
     ArrowDown,
-    User,
     Grid,
     SwitchButton,
     Setting
@@ -82,8 +77,6 @@ export default {
         this.$router.push('/agents')
       } else if (command === 'admin') {
         this.$router.push('/admin')
-      } else if (command === 'profile') {
-        this.$message.info('个人中心功能开发中')
       }
     },
     logout() {

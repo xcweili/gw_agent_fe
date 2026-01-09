@@ -115,15 +115,6 @@ class AuthService {
     const user = this.getCurrentUser()
     return user?.role === 'admin'
   }
-
-  getUserRole() {
-    const user = this.getCurrentUser()
-    return user?.role || 'guest'
-  }
-
-  isValidRole(role) {
-    return ['admin', 'user', 'viewer'].includes(role)
-  }
 }
 
 export const authService = new AuthService()
