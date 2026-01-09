@@ -152,8 +152,18 @@ export default {
     async loadAgents() {
       try {
         const result = await backendService.getAgents()
-        if (result.success && result.data) {
-          this.agents = result.data
+        // 修复：直接使用返回的数组数据，因为后端服务返回的是完整的agents数组
+        if (Array.isArray(result)) {
+          // 权限过滤：管理员可以看到所有智能体，其他用户只能看到自己创建的智能体
+          const userData = localStorage.getItem('currentUser')
+          const user = userData ? JSON.parse(userData) : null
+          let agents = result
+          
+          if (user && user.role !== 'admin') {
+            agents = agents.filter(agent => agent.createdBy === user.username)
+          }
+          
+          this.agents = agents
           if (this.agents.length > 0 && !this.selectedAgent) {
             this.selectedAgent = this.agents[0]
             this.$emit('agent-selected', this.selectedAgent)
@@ -162,6 +172,9 @@ export default {
       } catch (error) {
         console.error('加载智能体列表失败:', error)
       }
+    },
+    async refreshAgents() {
+      await this.loadAgents()
     },
     loadFavorites() {
       const saved = localStorage.getItem('agent_favorites')

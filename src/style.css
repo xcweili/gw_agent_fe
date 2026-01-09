@@ -507,7 +507,6 @@ body {
 .create-agent-card .el-icon {
   font-size: 32px;
   color: var(--text-color-secondary);
-  margin-bottom: 12px;
   transition: color 0.3s ease;
 }
 

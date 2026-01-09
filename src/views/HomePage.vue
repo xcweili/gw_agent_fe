@@ -33,6 +33,22 @@ export default {
       })
     }
   },
+  watch: {
+    $route: {
+      async handler(newRoute, oldRoute) {
+        // 当从智能体列表页返回首页时，刷新智能体列表
+        if (newRoute.path === '/' && oldRoute && oldRoute.path === '/agents') {
+          this.$nextTick(async () => {
+            const sidebar = this.$refs.sidebar
+            if (sidebar && sidebar.refreshAgents) {
+              await sidebar.refreshAgents()
+            }
+          })
+        }
+      },
+      immediate: false
+    }
+  },
   methods: {
     handleAgentSelected(agent) {
       this.selectedAgent = agent

@@ -2,6 +2,8 @@ const express = require('express')
 const cors = require('cors')
 const fs = require('fs')
 const path = require('path')
+const http = require('http')
+const https = require('https')
 
 const app = express()
 const PORT = 3001
@@ -279,6 +281,75 @@ app.delete('/api/agents/:id', (req, res) => {
   writeJson('agents.json', agents)
 
   res.json({ success: true, message: '删除成功' })
+})
+
+app.all('/api/proxy/*', async (req, res) => {
+  const targetUrl = req.params[0]
+  const targetHost = req.query.host || req.query.target
+
+  if (!targetHost) {
+    return res.status(400).json({ success: false, message: '缺少目标地址参数' })
+  }
+
+  try {
+    const url = `${targetHost}${targetUrl}${req.url.split('?')[1] ? '?' + req.url.split('?')[1] : ''}`
+    const isHttps = targetHost.startsWith('https://')
+    const protocol = isHttps ? https : http
+
+    const options = {
+      method: req.method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': req.headers['authorization'],
+        'Api-Key': req.headers['api-key'],
+        'User-Agent': 'Mozilla/5.0'
+      },
+      timeout: 60000
+    }
+
+    const response = await new Promise((resolve, reject) => {
+      const reqProxy = protocol.request(url, options, (resProxy) => {
+        let data = ''
+        resProxy.on('data', chunk => data += chunk)
+        resProxy.on('end', () => {
+          try {
+            resolve({
+              status: resProxy.statusCode,
+              headers: resProxy.headers,
+              body: JSON.parse(data)
+            })
+          } catch {
+            resolve({
+              status: resProxy.statusCode,
+              headers: resProxy.headers,
+              body: data
+            })
+          }
+        })
+      })
+
+      reqProxy.on('error', reject)
+      reqProxy.setTimeout(60000, () => {
+        reqProxy.destroy()
+        reject(new Error('请求超时'))
+      })
+
+      if (req.body && Object.keys(req.body).length > 0) {
+        reqProxy.write(JSON.stringify(req.body))
+      }
+      reqProxy.end()
+    })
+
+    res.set(response.headers)
+    res.status(response.status).json(response.body)
+  } catch (error) {
+    console.error('代理请求失败:', error.message)
+    res.status(500).json({
+      success: false,
+      message: '代理请求失败',
+      error: error.message
+    })
+  }
 })
 
 app.listen(PORT, () => {

@@ -3,13 +3,27 @@
     <div class="chat-container">
       <div v-if="!selectedAgent" class="empty-state-chat">
         <div class="empty-state-content">
-          <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMTAwIiBjeT0iMTAwIiByPSI4MCIgZmlsbD0iIzQwOUVGRiIgb3BhY2l0eT0iMC4xMiIvPjxjaXJjbGUgY3g9IjEwMCIgY3k9IjEwMCIgcj0iNjAiIGZpbGw9IiM0MDlFRkYiIG9wYWNpdHk9IjAuMiIvPjxjaXJjbGUgY3g9IjEwMCIgY3k9IjEwMCIgcj0iMjUiIGZpbGw9IiM0MDlFRkYiLz48cmVjdCB4PSI3MCIgeT0iNzUiIHdpZHRoPSI2MCIgaGVpZ2h0PSI1MCIgcng9IjgiIGZpbGw9IiM0MDlFRkYiIG9wYWNpdHk9IjAuOCIvPjxjaXJjbGUgY3g9Ijg1IiBjeT0iOTAiIHI9IjUiIGZpbGw9IndoaXRlIi8+PGNpcmNsZSBjeD0iMTE1IiBjeT0iOTAiIHI9IjUiIGZpbGw9IndoaXRlIi8+PHJlY3QgeD0iOTAiIHk9IjEwNSIgd2lkdGg9IjIwIiBoZWlnaHQ9IjQiIHJ4PSIyIiBmaWxsPSJ3aGl0ZSIvPjxwYXRoIGQ9Ik0xMDAgMTM1TDEwMCAxNTBMODUgMTQ1TDEwMCAxMzVMMTE1IDE0NSIgc3Ryb2tlPSIjNDA5RUZGIiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==" class="empty-img" />
-          <h2 class="empty-title">选择智能体开始对话</h2>
-          <p class="empty-description">从左侧选择一个智能体，开始您的智能对话体验</p>
+          <div class="empty-illustration">
+            <svg width="240" height="240" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="100" cy="100" r="80" fill="#409EFF" opacity="0.1"/>
+              <circle cx="100" cy="100" r="60" fill="#409EFF" opacity="0.2"/>
+              <circle cx="100" cy="100" r="25" fill="#409EFF"/>
+              <rect x="70" y="75" width="60" height="50" rx="8" fill="#409EFF" opacity="0.8"/>
+              <circle cx="85" cy="90" r="5" fill="white"/>
+              <circle cx="115" cy="90" r="5" fill="white"/>
+              <rect x="90" y="105" width="20" height="4" rx="2" fill="white"/>
+              <path d="M100 135L100 150L85 145L100 135L115 145Z" stroke="#409EFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h2 class="empty-title">欢迎使用智能体对话系统</h2>
+          <p class="empty-description">从左侧选择一个智能体，或点击下方快捷方式开始对话</p>
           <div class="quick-start-cards">
             <div class="quick-start-card" v-for="agent in recentAgents" :key="agent.id" @click="selectAgent(agent)">
-              <img :src="agent.icon" :alt="agent.name" class="quick-start-icon" />
+              <div class="quick-start-icon-wrapper">
+                <img :src="agent.icon || defaultIcon" :alt="agent.name" class="quick-start-icon" />
+              </div>
               <span class="quick-start-name">{{ agent.name }}</span>
+              <span class="quick-start-desc">{{ agent.description }}</span>
             </div>
           </div>
         </div>
@@ -19,47 +33,47 @@
         <div class="chat-header">
           <div class="chat-header-info">
             <div class="agent-avatar-large">
-              <img :src="selectedAgent.icon || defaultIcon" :alt="selectedAgent.name" />
+              <div class="avatar-container">
+                <img :src="selectedAgent.icon || defaultIcon" :alt="selectedAgent.name" />
+                <div class="avatar-status"></div>
+              </div>
             </div>
             <div class="agent-details">
-              <h3 class="agent-name-large">{{ selectedAgent.name }}</h3>
+              <div class="agent-name-row">
+                <h3 class="agent-name-large">{{ selectedAgent.name }}</h3>
+                <el-tag class="agent-status-tag" size="small" type="success">在线</el-tag>
+              </div>
               <p class="agent-description-large">{{ selectedAgent.description }}</p>
             </div>
           </div>
           <div class="chat-header-actions">
-            <el-tooltip content="开启新对话" placement="bottom">
-              <el-button class="header-btn" circle @click="startNewChat">
-                <el-icon><Plus /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip content="清空对话历史" placement="bottom">
-              <el-button class="header-btn" circle @click="confirmClearChat">
-                <el-icon><Delete /></el-icon>
-              </el-button>
-            </el-tooltip>
+            <el-button 
+              class="new-chat-btn"
+              type="primary"
+              size="small"
+              @click="startNewChat"
+            >
+              开启新对话
+            </el-button>
           </div>
         </div>
 
         <div class="chat-messages-area" ref="chatMessages">
           <div class="messages-inner">
-            <div v-if="messages.length === 0" class="welcome-message">
-              <div class="welcome-avatar">
-                <img :src="selectedAgent.icon || defaultIcon" :alt="selectedAgent.name" />
-              </div>
+            <div v-if="messages.length === 0 && selectedAgent.questions && selectedAgent.questions.length > 0" class="welcome-message">
               <div class="welcome-content">
-                <h4>你好！我是 {{ selectedAgent.name }}</h4>
-                <p>{{ selectedAgent.description }}</p>
-                <div v-if="selectedAgent.questions && selectedAgent.questions.length > 0" class="suggested-questions">
-                  <p class="suggested-title">你可以问我：</p>
+                <h4 class="welcome-title">猜你想问</h4>
+                <div class="suggested-questions">
                   <div class="suggested-tags">
-                    <el-tag
-                      v-for="question in selectedAgent.questions.slice(0, 4)"
+                    <div
+                      v-for="question in selectedAgent.questions.slice(0, 5)"
                       :key="question"
                       class="suggested-tag"
                       @click="sendQuickQuestion(question)"
                     >
-                      {{ question }}
-                    </el-tag>
+                      <span class="question-arrow">→</span>
+                      <span>{{ question }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -142,55 +156,31 @@
 
         <div class="chat-input-section">
           <div class="input-container">
-            <div class="quick-questions-bar" v-if="messages.length === 0 && selectedAgent.questions?.length > 0">
-              <div class="quick-questions-scroll">
-                <el-tag
-                  v-for="question in selectedAgent.questions"
-                  :key="question"
-                  class="quick-question-tag"
-                  @click="sendQuickQuestion(question)"
-                >
-                  {{ question }}
-                </el-tag>
-              </div>
-            </div>
-
-            <div class="chat-input-wrapper">
+            <div class="chat-input-wrapper" @click="focusInput">
+              <!-- 新增按钮（文件上传） -->
               <div class="input-actions-left">
                 <el-tooltip content="上传文件" placement="top">
-                  <div class="input-action-btn" @click="triggerFileUpload">
-                    <el-icon><DocumentAdd /></el-icon>
+                  <div class="input-action-btn" @click.stop="triggerFileUpload">
+                    <el-icon><Plus /></el-icon>
                   </div>
                 </el-tooltip>
               </div>
 
+              <!-- 中间输入框 -->
               <el-input
                 v-model="inputMessage"
                 type="textarea"
                 :rows="1"
                 :autosize="{ minRows: 1, maxRows: 4 }"
-                placeholder="输入消息，按 Enter 发送，Shift+Enter 换行..."
+                placeholder="   请输入问题"
                 class="chat-input-textarea"
                 @keydown.enter.exact.prevent="sendMessage"
                 @keydown.enter.shift.prevent="handleShiftEnter"
                 ref="messageInput"
               />
-
-              <div class="input-actions-right">
-                <el-tooltip content="发送消息" placement="top">
-                  <el-button
-                    type="primary"
-                    class="send-btn"
-                    :loading="isLoading"
-                    @click="sendMessage"
-                    :disabled="!canSend"
-                  >
-                    <el-icon><Promotion /></el-icon>
-                  </el-button>
-                </el-tooltip>
-              </div>
             </div>
 
+            <!-- 已上传文件预览 -->
             <div class="uploaded-files-preview" v-if="uploadedFiles.length > 0">
               <div v-for="(file, index) in uploadedFiles" :key="index" class="uploaded-file-item">
                 <el-icon><Document /></el-icon>
@@ -200,8 +190,9 @@
             </div>
           </div>
 
+          <!-- 底部提示信息 -->
           <div class="input-footer">
-            <span class="footer-hint">按 Enter 发送，Shift + Enter 换行</span>
+            <span class="footer-hint">内容由AI生成，仅供参考</span>
           </div>
         </div>
       </template>
@@ -257,7 +248,7 @@ export default {
       thinkExpanded: {},
       uploadedFiles: [],
       recentAgents: [],
-      defaultIcon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzQwOUVGRiIvPjxzd2VyIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4PSI4IiB5PSI4Ij48cGF0aCBkPSJNMTIgMkwxMy4wOSA4LjI2TDIwIDlMMTMuMDkgMTUuNzRMMTIgMjJMTAuOTEgMTUuNzRMNCA5TDEwLjA5IDguMjZMMTIgMloiIGZpbGw9IndoaXRlIi8+PC9zdmc+PC9zdmc+'
+      defaultIcon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzQwOUVGRiIvPjxwYXRoIGQ9Ik0xMiAyTDEzLjA5IDguMjZMMjAgOUwxMy4wOSAxNS43NEwxMiAyMkwxMC45MSAxNS43NEw0IDlMMTAuOTEgOC4yNkwxMiAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4='
     }
   },
   computed: {
@@ -288,7 +279,16 @@ export default {
       try {
         const result = await backendService.getAgents()
         if (result.success && result.data) {
-          this.recentAgents = result.data.slice(0, 4)
+          // 权限过滤：管理员可以看到所有智能体，其他用户只能看到自己创建的智能体
+          const userData = localStorage.getItem('currentUser')
+          const user = userData ? JSON.parse(userData) : null
+          let agents = result.data
+          
+          if (user && user.role !== 'admin') {
+            agents = agents.filter(agent => agent.createdBy === user.username)
+          }
+          
+          this.recentAgents = agents.slice(0, 4)
         }
       } catch (error) {
         console.error('加载智能体列表失败:', error)
@@ -452,6 +452,12 @@ export default {
       if (container) {
         container.scrollTop = container.scrollHeight
       }
+    },
+
+    focusInput() {
+      if (this.$refs.messageInput) {
+        this.$refs.messageInput.focus()
+      }
     }
   }
 }
@@ -480,130 +486,275 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 40px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
 }
 
 .empty-state-content {
   text-align: center;
-  max-width: 600px;
+  max-width: 700px;
+  animation: fadeInUp 0.6s ease-out;
 }
 
 .empty-illustration {
-  width: 200px;
-  height: 200px;
-  margin-bottom: 32px;
-  opacity: 0.8;
+  width: 240px;
+  height: 240px;
+  margin: 0 auto 40px;
+  opacity: 0.9;
+  filter: drop-shadow(0 10px 30px rgba(64, 158, 255, 0.2));
+  animation: float 3s ease-in-out infinite;
 }
 
 .empty-title {
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 28px;
+  font-weight: 700;
   color: #303133;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+  letter-spacing: -0.5px;
 }
 
 .empty-description {
-  font-size: 15px;
-  color: #909399;
-  margin-bottom: 32px;
+  font-size: 16px;
+  color: #606266;
+  margin-bottom: 40px;
+  line-height: 1.6;
 }
 
 .quick-start-cards {
-  display: flex;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
   justify-content: center;
-  flex-wrap: wrap;
+  margin: 0 auto;
+  max-width: 800px;
 }
 
 .quick-start-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 16px 24px;
+  gap: 12px;
+  padding: 24px 20px;
   background: #fff;
-  border-radius: 12px;
+  border-radius: 16px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.quick-start-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #409EFF 0%, #67C23A 100%);
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
 }
 
 .quick-start-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(64, 158, 255, 0.15);
+  transform: translateY(-8px);
+  box-shadow: 0 12px 40px rgba(64, 158, 255, 0.25);
+}
+
+.quick-start-card:hover::before {
+  transform: scaleX(1);
+}
+
+.quick-start-icon-wrapper {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f0f5ff 0%, #e6f2ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
 }
 
 .quick-start-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   object-fit: cover;
 }
 
 .quick-start-name {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
   color: #303133;
+}
+
+.quick-start-desc {
+  font-size: 13px;
+  color: #909399;
+  text-align: center;
+  line-height: 1.5;
+  max-width: 180px;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-15px);
+  }
 }
 
 .chat-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
+  padding: 20px 150px 20px 32px;
   background: #fff;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid #f0f0f0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s ease;
 }
 
 .chat-header-info {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
 .agent-avatar-large {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  position: relative;
+  width: 72px;
+  height: 72px;
+}
+
+.avatar-container {
+  width: 100%;
+  height: 100%;
+  border-radius: 20px;
   overflow: hidden;
-  background: #409EFF;
+  position: relative;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  background: linear-gradient(135deg, #409EFF 0%, #67C23A 100%);
+  transition: transform 0.3s ease;
+}
+
+.avatar-container:hover {
+  transform: scale(1.05);
 }
 
 .agent-avatar-large img {
   width: 100%;
   height: 100%;
+  border-radius: 20px;
   object-fit: cover;
+}
+
+.avatar-status {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 16px;
+  height: 16px;
+  background: #67C23A;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(103, 194, 58, 0.5);
+  animation: pulse 2s infinite;
 }
 
 .agent-details {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+
+.agent-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .agent-name-large {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 700;
   color: #303133;
   margin: 0;
+  letter-spacing: -0.3px;
+}
+
+.agent-status-tag {
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .agent-description-large {
-  font-size: 13px;
-  color: #909399;
-  margin: 4px 0 0;
+  font-size: 14px;
+  color: #606266;
+  margin: 0;
+  line-height: 1.5;
+  max-width: 500px;
 }
 
 .chat-header-actions {
   display: flex;
-  gap: 8px;
+  gap: 12px;
+  align-items: center;
 }
+
+.new-chat-btn {
+    border-radius: 24px;
+    padding: 8px 22px;
+    font-size: 15px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    background: linear-gradient(135deg, #409EFF 0%, #67C23A 100%);
+    border: none;
+    color: #fff;
+  }
+
+  .new-chat-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(64, 158, 255, 0.4);
+  }
+
+  .new-chat-btn:active {
+    transform: translateY(0);
+  }
 
 .header-btn {
   color: #909399;
+  width: 36px;
+  height: 36px;
+  transition: all 0.3s ease;
 }
 
 .header-btn:hover {
   color: #409EFF;
   background: rgba(64, 158, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
 }
 
 .chat-messages-area {
@@ -618,69 +769,50 @@ export default {
   margin: 0 auto;
 }
 
-.welcome-message {
-  display: flex;
-  gap: 16px;
-  padding: 24px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-}
-
-.welcome-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  overflow: hidden;
-  flex-shrink: 0;
-  background: #409EFF;
-}
-
-.welcome-avatar img {
+.welcome-content {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-width: 800px;
+  text-align: left;
 }
 
 .welcome-content h4 {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: #303133;
-  margin: 0 0 8px;
-}
-
-.welcome-content p {
-  font-size: 14px;
-  color: #606266;
-  margin: 0;
-  line-height: 1.6;
+  margin: 0 0 16px;
 }
 
 .suggested-questions {
-  margin-top: 16px;
-}
-
-.suggested-title {
-  font-size: 13px;
-  color: #909399;
-  margin: 0 0 8px;
+  margin-top: 0;
 }
 
 .suggested-tags {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .suggested-tag {
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
+    cursor: pointer;
+    font-size: 14px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: #f5f7fa;
+    color: #303133;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 0.2s ease;
+  }
 
-.suggested-tag:hover {
-  background: #409EFF;
-  color: #fff;
-}
+  .suggested-tag:hover {
+    background: #e9ecef;
+  }
+
+  .question-arrow {
+    color: #409EFF;
+    font-size: 12px;
+  }
 
 .message-wrapper {
   display: flex;
@@ -727,25 +859,27 @@ export default {
 }
 
 .message-bubble {
-  padding: 14px 18px;
-  border-radius: 16px;
-  font-size: 14px;
-  line-height: 1.7;
-  position: relative;
-}
+    padding: 14px 18px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.7;
+    position: relative;
+    animation: fadeInUp 0.3s ease forwards;
+  }
 
-.message-bubble.user {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: #fff;
-  border-bottom-right-radius: 4px;
-}
+  .message-bubble.user {
+    background: #409EFF;
+    color: #fff;
+    border-bottom-right-radius: 4px;
+    box-shadow: 0 2px 8px rgba(64, 158, 255, 0.2);
+  }
 
-.message-bubble.assistant {
-  background: #fff;
-  color: #303133;
-  border-bottom-left-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
+  .message-bubble.assistant {
+    background: #fff;
+    color: #303133;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
 
 .message-bubble.loading {
   display: flex;
@@ -866,53 +1000,35 @@ export default {
 }
 
 .chat-input-section {
-  background: #fff;
-  border-top: 1px solid #ebeef5;
-  padding: 16px 24px 12px;
-}
+    background: #fff;
+    border-top: 1px solid #ebeef5;
+    padding: 16px 24px 20px;
+    box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.04);
+  }
 
-.input-container {
-  max-width: 900px;
-  margin: 0 auto;
-}
+  .input-container {
+    max-width: 900px;
+    margin: 0 auto;
+  }
 
-.quick-questions-bar {
-  margin-bottom: 12px;
-}
+  .chat-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    border-radius: 28px;
+    padding: 12px 20px;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    position: relative;
+  }
 
-.quick-questions-scroll {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.quick-question-tag {
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.quick-question-tag:hover {
-  background: #409EFF;
-  color: #fff;
-  border-color: #409EFF;
-}
-
-.chat-input-wrapper {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  background: #f5f7fa;
-  border-radius: 12px;
-  padding: 8px 12px;
-  border: 1px solid #ebeef5;
-  transition: all 0.2s ease;
-}
-
-.chat-input-wrapper:focus-within {
-  border-color: #409EFF;
-  background: #fff;
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.1);
-}
+  .chat-input-wrapper:focus-within {
+    border-color: #409EFF;
+    background: #fff;
+    box-shadow: 0 4px 20px rgba(64, 158, 255, 0.15);
+  }
 
 .input-actions-left,
 .input-actions-right {
@@ -939,27 +1055,84 @@ export default {
 
 .chat-input-textarea {
   flex: 1;
+  min-width: 0;
+  margin: 0;
 }
+
+.chat-input-textarea :deep(.el-textarea) {
+    margin: 0;
+    width: 100%;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent;
+  }
 
 .chat-input-textarea :deep(.el-textarea__inner) {
-  border: none;
-  background: transparent;
-  resize: none;
-  font-size: 14px;
-  line-height: 1.6;
-  padding: 6px 0;
-}
+    border: none !important;
+    background: transparent !important;
+    resize: none;
+    font-size: 15px;
+    line-height: 1.7;
+    padding: 10px 12px;
+    min-height: 40px;
+    color: #303133;
+    border-radius: 0;
+    width: 100%;
+    outline: none !important;
+    box-shadow: none !important;
+  }
 
-.chat-input-textarea :deep(.el-textarea__inner:focus) {
-  box-shadow: none;
-}
+  .chat-input-textarea :deep(.el-textarea__inner:focus) {
+    box-shadow: none !important;
+    outline: none !important;
+    border-color: transparent !important;
+    background: transparent !important;
+  }
 
-.send-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  padding: 0;
-}
+  .chat-input-textarea :deep(.el-textarea) {
+    border: none !important;
+    background: transparent;
+    box-shadow: none !important;
+  }
+
+  .chat-input-textarea :deep(.el-textarea:focus-within) {
+    box-shadow: none !important;
+    border-color: transparent !important;
+    background: transparent;
+  }
+
+  .chat-input-textarea :deep(.el-textarea__inner::placeholder) {
+    color: #c0c4cc;
+  }
+
+  /* 新增包装器样式重置 */
+  .chat-input-textarea :deep(.el-textarea__wrapper) {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent;
+  }
+
+  .chat-input-textarea :deep(.el-textarea__wrapper:focus-within) {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent;
+  }
+
+  /* 新增input内部样式重置 */
+  .chat-input-textarea :deep(.el-input__inner) {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent;
+  }
+
+  .chat-input-textarea :deep(.el-input__inner:focus) {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent;
+    outline: none !important;
+  }
+
+
 
 .uploaded-files-preview {
   display: flex;
@@ -999,19 +1172,84 @@ export default {
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-}
+    width: 6px;
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: #dcdfe6;
-  border-radius: 3px;
-}
+  ::-webkit-scrollbar-thumb {
+    background: #dcdfe6;
+    border-radius: 3px;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #c0c4cc;
-}
+  ::-webkit-scrollbar-thumb:hover {
+    background: #c0c4cc;
+  }
+
+  /* 响应式设计 */
+  @media (max-width: 768px) {
+    .main-content {
+      margin-left: 0;
+    }
+
+    .chat-header {
+      padding: 16px 20px;
+    }
+
+    .chat-messages-area {
+      padding: 16px;
+    }
+
+    .chat-input-section {
+      padding: 12px 16px 16px;
+    }
+
+    .message-wrapper {
+      gap: 8px;
+    }
+
+    .message-content-wrapper {
+      max-width: 85%;
+    }
+
+    .quick-start-cards {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .empty-state-chat {
+      padding: 20px;
+    }
+
+    .empty-illustration {
+      width: 180px;
+      height: 180px;
+      margin-bottom: 30px;
+    }
+
+    .empty-title {
+      font-size: 24px;
+    }
+
+    .quick-start-cards {
+      grid-template-columns: 1fr;
+    }
+
+    .message-content-wrapper {
+      max-width: 90%;
+    }
+
+    .chat-input-wrapper {
+      padding: 8px 16px;
+    }
+
+    .send-btn {
+      width: 40px;
+      height: 40px;
+    }
+  }
 </style>

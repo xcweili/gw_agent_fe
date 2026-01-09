@@ -48,8 +48,8 @@ export default {
   },
   provide() {
     return {
-      currentUser: this.currentUser,
-      isAdmin: this.isAdmin,
+      getCurrentUser: () => this.currentUser,
+      getIsAdmin: () => this.isAdmin,
       logout: this.logout,
       refreshUser: this.refreshUser
     }

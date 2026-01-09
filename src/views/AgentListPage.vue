@@ -10,12 +10,6 @@
         <h1 class="main-title">智能体管理</h1>
         <p class="sub-title">管理和配置您的智能体助手</p>
       </div>
-      <div class="header-action" v-if="canManageAgents">
-        <el-button type="primary" size="large" @click="showCreateDialog = true" class="create-btn">
-          <el-icon><Plus /></el-icon>
-          创建智能体
-        </el-button>
-      </div>
     </div>
 
     <div class="toolbar-section">
@@ -86,16 +80,16 @@
           <p class="empty-description">
             {{ searchKeyword || filterType ? '尝试调整搜索条件或筛选器' : '创建您的第一个智能体助手，开始智能对话之旅' }}
           </p>
-          <div class="empty-actions" v-if="canManageAgents && !searchKeyword && !filterType">
-            <el-button type="primary" size="large" @click="showCreateDialog = true">
-              <el-icon><Plus /></el-icon>
-              创建智能体
-            </el-button>
-            <el-button size="large" @click="handleSearchClear">
-              <el-icon><Refresh /></el-icon>
-              刷新列表
-            </el-button>
-          </div>
+          <div class="empty-actions" v-if="!searchKeyword && !filterType">
+          <el-button type="primary" size="large" @click="showCreateDialog = true">
+            <el-icon><Plus /></el-icon>
+            创建智能体
+          </el-button>
+          <el-button size="large" @click="handleSearchClear">
+            <el-icon><Refresh /></el-icon>
+            刷新列表
+          </el-button>
+        </div>
           <div class="empty-actions" v-else-if="searchKeyword || filterType">
             <el-button size="large" @click="handleSearchClear">
               <el-icon><Close /></el-icon>
@@ -105,7 +99,7 @@
         </div>
       </div>
 
-      <div v-else :class="['agent-container', viewMode]">
+      <div v-else :class="['agent-container', { 'list-mode': viewMode === 'list' }]">
         <div
           v-for="agent in filteredAgents"
           :key="agent.id"
@@ -116,7 +110,7 @@
               <div class="agent-type-badge" v-if="agent.type">
                 {{ getTypeLabel(agent.type) }}
               </div>
-              <div class="card-actions" v-if="canManageAgents">
+              <div class="card-actions">
                 <el-dropdown trigger="click" @command="(cmd) => handleCardAction(cmd, agent)">
                   <el-button size="small" type="text" class="more-button">
                     <el-icon><MoreFilled /></el-icon>
@@ -177,15 +171,17 @@
                   +{{ agent.questions.length - 2 }}
                 </span>
               </div>
-              <el-button type="primary" size="small" class="start-chat-btn" @click="selectAgent(agent)">
-                开始对话
-                <el-icon><Right /></el-icon>
-              </el-button>
+              <div class="card-footer-actions">
+                <el-button type="primary" size="small" class="start-chat-btn" @click="selectAgent(agent)">
+                  开始对话
+                  <el-icon><Right /></el-icon>
+                </el-button>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="create-card-wrapper" v-if="canManageAgents">
+        <div class="create-card-wrapper">
           <div class="create-agent-card" @click="showCreateDialog = true">
             <div class="create-icon-wrapper">
               <el-icon class="create-icon"><Plus /></el-icon>
@@ -305,31 +301,7 @@
                   />
                 </el-form-item>
               </el-col>
-              <el-col :span="12">
-                <el-form-item label="模型名称">
-                  <el-input v-model="newAgent.model" placeholder="gpt-4" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="Temperature">
-                  <el-slider v-model="newAgent.temperature" :min="0" :max="2" :step="0.1" :format-tooltip="(val) => val.toFixed(1)" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="最大Tokens">
-                  <el-input-number v-model="newAgent.maxTokens" :min="100" :max="32768" :step="100" style="width: 100%;" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="系统提示词">
-                  <el-input
-                    v-model="newAgent.systemPrompt"
-                    type="textarea"
-                    :rows="4"
-                    placeholder="设定智能体的角色和行为规则..."
-                  />
-                </el-form-item>
-              </el-col>
+
             </el-row>
           </el-form>
         </el-tab-pane>
@@ -425,8 +397,8 @@ export default {
     draggable
   },
   inject: {
-    currentUser: { default: null },
-    isAdmin: { default: false }
+    getCurrentUser: { default: () => null },
+    getIsAdmin: { default: () => false }
   },
   data() {
     return {
@@ -447,10 +419,6 @@ export default {
         type: 'general',
         apiUrl: '',
         apiKey: '',
-        model: 'gpt-4',
-        temperature: 0.7,
-        maxTokens: 4096,
-        systemPrompt: '',
         icon: '',
         questions: [''],
         status: 'online'
@@ -477,10 +445,16 @@ export default {
   },
   computed: {
     canManageAgents() {
-      return this.isAdmin || (this.currentUser && this.currentUser.username)
+      return this.getIsAdmin() || (this.getCurrentUser() && this.getCurrentUser().username)
     },
     filteredAgents() {
       let result = [...this.agents]
+      
+      // 权限过滤：管理员可以看到所有智能体，其他用户只能看到自己创建的智能体
+      const currentUser = this.getCurrentUser()
+      if (!this.getIsAdmin() && currentUser?.username) {
+        result = result.filter(agent => agent.createdBy === currentUser.username)
+      }
       
       if (this.searchKeyword) {
         const keyword = this.searchKeyword.toLowerCase()
@@ -553,8 +527,8 @@ export default {
     
     canEditAgent(agent) {
       if (!this.canManageAgents) return false
-      if (this.isAdmin) return true
-      return agent.createdBy === this.currentUser?.username
+      if (this.getIsAdmin()) return true
+      return agent.createdBy === this.getCurrentUser()?.username
     },
     
     canDeleteAgent(agent) {
@@ -661,7 +635,7 @@ export default {
         ...agent,
         name: `${agent.name} (副本)`,
         id: Date.now().toString(),
-        createdBy: this.currentUser?.username,
+        createdBy: this.getCurrentUser()?.username,
         createdAt: new Date().toISOString(),
         usageCount: 0
       }
@@ -742,7 +716,7 @@ export default {
               ...this.newAgent,
               id: Date.now().toString(),
               questions: this.newAgent.questions.filter(q => q.trim()),
-              createdBy: this.currentUser?.username,
+              createdBy: this.getCurrentUser()?.username,
               createdAt: new Date().toISOString(),
               usageCount: 0
             }
@@ -895,6 +869,28 @@ export default {
   font-weight: 500;
 }
 
+.toolbar-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.toolbar-create-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+  background: linear-gradient(135deg, #5a6fd8 0%, #684292 100%);
+}
+
 .loading-state {
   padding: 20px 0;
 }
@@ -951,12 +947,13 @@ export default {
 
 .agent-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 20px;
 }
 
 .agent-container.list-mode {
   grid-template-columns: 1fr;
+  gap: 16px;
 }
 
 .agent-card-wrapper {
@@ -988,6 +985,7 @@ export default {
   flex-direction: row;
   align-items: center;
   padding: 16px 20px;
+  min-height: 120px;
 }
 
 .agent-card.list-mode .card-main {
@@ -1001,9 +999,12 @@ export default {
 
 .agent-card.list-mode .card-footer {
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px 0 0;
   border-top: none;
+  align-self: stretch;
+  align-items: center;
 }
 
 .card-header-bar {
@@ -1073,11 +1074,20 @@ export default {
 
 .agent-info {
   text-align: center;
+  width: 100%;
+  justify-content: center;
+  align-items: center;
+  display: flex;
+  flex-direction: column;
 }
 
 .agent-card.list-mode .agent-info {
   text-align: left;
   flex: 1;
+  display: block;
+  width: auto;
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 
 .agent-name {
@@ -1088,6 +1098,15 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
+}
+
+.agent-container:not(.list-mode) .agent-card:not(.list-mode) .agent-info .agent-name {
+  text-align: center;
+}
+
+.agent-card.list-mode .agent-info .agent-name {
+  text-align: left;
 }
 
 .agent-description {
@@ -1171,6 +1190,10 @@ export default {
   min-height: 280px;
 }
 
+.agent-container.list-mode .create-card-wrapper {
+  min-height: 120px;
+}
+
 .create-agent-card {
   height: 100%;
   min-height: 280px;
@@ -1184,6 +1207,15 @@ export default {
   cursor: pointer;
   transition: all 0.3s ease;
   gap: 16px;
+}
+
+.agent-container.list-mode .create-agent-card {
+  min-height: 120px;
+  flex-direction: row;
+  gap: 20px;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 20px;
 }
 
 .create-agent-card:hover {
