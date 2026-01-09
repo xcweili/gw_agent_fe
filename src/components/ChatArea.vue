@@ -112,7 +112,13 @@
 
                   <div v-if="message.files && message.files.length > 0" class="message-files">
                     <div v-for="file in message.files" :key="file.name" class="file-item">
-                      <el-icon><Document /></el-icon>
+                      <div v-if="file.type && file.type.startsWith('image/')" class="image-preview-container">
+                        <img v-if="file.data" :src="`data:${file.type};base64,${file.data}`" :alt="file.name" class="image-preview" />
+                        <el-icon v-else><Document /></el-icon>
+                      </div>
+                      <div v-else class="file-preview-container">
+                        <el-icon><Document /></el-icon>
+                      </div>
                       <span>{{ file.name }}</span>
                     </div>
                   </div>
@@ -156,7 +162,24 @@
 
         <div class="chat-input-section">
           <div class="input-container">
-            <div class="chat-input-wrapper" @click="focusInput">
+            <!-- 已上传文件预览 -->
+            <div class="uploaded-files-preview" v-if="uploadedFiles.length > 0">
+              <div v-for="(file, index) in uploadedFiles" :key="index" class="uploaded-file-item">
+                <template v-if="file.type && file.type.startsWith('image/')">
+                  <div class="image-preview-container">
+                    <img :src="file.preview || URL.createObjectURL(file.file)" :alt="file.name" class="image-preview" />
+                  </div>
+                  <span class="file-name">{{ file.name }}</span>
+                </template>
+                <template v-else>
+                  <el-icon><Document /></el-icon>
+                  <span class="file-name">{{ file.name }}</span>
+                </template>
+                <el-icon class="remove-file" @click="removeFile(index)"><Close /></el-icon>
+              </div>
+            </div>
+            
+            <div class="chat-input-wrapper" @click="focusInput" @paste="handlePaste">
               <!-- 新增按钮（文件上传） -->
               <div class="input-actions-left">
                 <el-tooltip content="上传文件" placement="top">
@@ -178,15 +201,6 @@
                 @keydown.enter.shift.prevent="handleShiftEnter"
                 ref="messageInput"
               />
-            </div>
-
-            <!-- 已上传文件预览 -->
-            <div class="uploaded-files-preview" v-if="uploadedFiles.length > 0">
-              <div v-for="(file, index) in uploadedFiles" :key="index" class="uploaded-file-item">
-                <el-icon><Document /></el-icon>
-                <span class="file-name">{{ file.name }}</span>
-                <el-icon class="remove-file" @click="removeFile(index)"><Close /></el-icon>
-              </div>
             </div>
           </div>
 
@@ -335,12 +349,31 @@ export default {
       this.uploadedFiles = []
 
       const messageId = Date.now()
+      // 为图片文件添加base64数据
+      const messageFiles = files.length > 0 ? await Promise.all(files.map(async f => {
+        if (f.type && f.type.startsWith('image/')) {
+          const base64Data = await this.fileToBase64(f.file)
+          return {
+            name: f.name,
+            size: f.size,
+            type: f.type,
+            data: base64Data
+          }
+        } else {
+          return {
+            name: f.name,
+            size: f.size,
+            type: f.type
+          }
+        }
+      })) : null
+
       this.messages.push({
         id: messageId,
         role: 'user',
         content: userMessage,
         think: null,
-        files: files.length > 0 ? files.map(f => ({ name: f.name, size: f.size })) : null,
+        files: messageFiles,
         timestamp: new Date().toISOString()
       })
 
@@ -357,10 +390,28 @@ export default {
       this.$nextTick(() => this.scrollToBottom())
 
       try {
-        const response = await chatService.sendMessage({
+        // 从消息中的files获取已转换好的base64图片
+        const base64Images = messageFiles ? messageFiles.filter(f => f.type && f.type.startsWith('image/')) : []
+
+        // 组装请求参数，满足dify的格式要求
+        const requestParams = {
           agent: this.selectedAgent,
           messages: this.messages.filter(m => m.id !== assistantMessageId),
           userInput: userMessage
+        }
+
+        // 如果有图片，添加到请求参数中（根据dify的要求）
+        if (base64Images.length > 0) {
+          requestParams.images = base64Images
+        }
+
+        const response = await chatService.sendMessage({
+          agent: this.selectedAgent,
+          messages: this.messages.filter(m => m.id !== assistantMessageId),
+          userInput: userMessage,
+          options: {
+            images: base64Images
+          }
         })
 
         const assistantMessage = this.messages.find(m => m.id === assistantMessageId)
@@ -458,6 +509,45 @@ export default {
       if (this.$refs.messageInput) {
         this.$refs.messageInput.focus()
       }
+    },
+
+    handlePaste(event) {
+      const items = event.clipboardData.items
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile()
+          if (file) {
+            this.handlePastedImage(file)
+          }
+        }
+      }
+    },
+
+    handlePastedImage(file) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        this.uploadedFiles.push({
+          name: file.name || 'pasted-image.jpg',
+          size: file.size,
+          type: file.type,
+          file: file,
+          preview: e.target.result
+        })
+      }
+      reader.readAsDataURL(file)
+    },
+
+    fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          // 移除base64前缀，只保留数据部分
+          const base64Data = e.target.result.split(',')[1]
+          resolve(base64Data)
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
     }
   }
 }
@@ -1138,7 +1228,10 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-bottom: 12px;
+  padding: 0 20px 0 calc(20px + 44px);
+  max-width: 900px;
+  box-sizing: border-box;
 }
 
 .uploaded-file-item {
@@ -1159,6 +1252,24 @@ export default {
 
 .remove-file:hover {
   color: #f56c6c;
+}
+
+.image-preview-container {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.image-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .input-footer {

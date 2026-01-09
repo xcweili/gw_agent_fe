@@ -68,13 +68,28 @@ class ChatService {
       body.trace_id = options.traceId
     }
 
-    if (files && files.length > 0) {
-      body.files = files.map(file => ({
-        type: file.type,
-        transfer_method: file.transfer_method,
-        url: file.transfer_method === 'remote_url' ? file.url : undefined,
-        upload_file_id: file.transfer_method === 'local_file' ? file.upload_file_id : undefined
-      }))
+    // 处理图片和文件
+    const allFiles = [...(files || []), ...(options.images || [])]
+    if (allFiles.length > 0) {
+      body.files = allFiles.map(file => {
+        // 处理base64图片
+        if (file.data) {
+          return {
+            type: file.type,
+            transfer_method: 'data_url',
+            data: `data:${file.type};base64,${file.data}`
+          }
+        } 
+        // 处理普通文件
+        else {
+          return {
+            type: file.type,
+            transfer_method: file.transfer_method,
+            url: file.transfer_method === 'remote_url' ? file.url : undefined,
+            upload_file_id: file.transfer_method === 'local_file' ? file.upload_file_id : undefined
+          }
+        }
+      })
     }
 
     return body
