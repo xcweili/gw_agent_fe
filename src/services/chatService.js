@@ -7,30 +7,48 @@ class ChatService {
   }
 
   async sendMessage({ agent, messages, userInput, files = [], options = {} }) {
-    if (!agent.apiUrl || !agent.apiKey) {
-      throw new Error('智能体配置不完整，请检查API地址和API Key')
-    }
+    // 使用固定的API URL和API Key，从agent对象中获取
+    const apiUrl = agent.apiUrl || 'http://10.255.216.2:8083/v1/workflows/run'
+    const apiKey = agent.apiKey || 'app-eOFxeRHMBoEZWxX5y2aOVww9'
+    const responseMode = options.responseMode || 'streaming'
 
     try {
-      const requestBody = this.buildRequestBody(userInput, messages, files, options)
+      const requestBody = this.buildRequestBody(userInput, messages, files, options, agent)
 
       const headers = {
-        'Authorization': `Bearer ${agent.apiKey}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'Accept': 'text/event-stream'
+        'Accept': responseMode === 'streaming' ? 'text/event-stream' : 'application/json'
       }
 
       if (options.traceId) {
         headers['X-Trace-Id'] = options.traceId
       }
 
-      const response = await axios.post(agent.apiUrl, requestBody, {
+      const response = await axios.post(apiUrl, requestBody, {
         headers,
         timeout: options.timeout || 120000,
-        responseType: 'stream'
+        responseType: responseMode === 'streaming' ? 'stream' : 'json'
       })
 
-      const fullResponse = await this.processStreamResponse(response.data)
+      let fullResponse
+      if (responseMode === 'streaming') {
+        fullResponse = await this.processStreamResponse(response.data)
+      } else {
+        // blocking模式直接处理响应数据
+        fullResponse = {
+          content: response.data.content || '抱歉，我无法生成合适的回答。',
+          think: response.data.think || null,
+          conversation_id: response.data.conversation_id,
+          message_id: response.data.message_id,
+          task_id: response.data.task_id,
+          usage: response.data.usage,
+          retriever_resources: response.data.retriever_resources
+        }
+      }
+
+      // 添加响应模式到返回结果
+      fullResponse.response_mode = responseMode
       
       if (fullResponse.conversation_id) {
         this.currentConversation = fullResponse.conversation_id
@@ -43,12 +61,12 @@ class ChatService {
     }
   }
 
-  buildRequestBody(userInput, messages, files, options = {}) {
+  buildRequestBody(userInput, messages, files, options = {}, agent = {}) {
     const body = {
       query: userInput,
       inputs: options.inputs || {},
       response_mode: options.responseMode || 'streaming',
-      user: options.userId || this.userId,
+      user: agent.agentIdentifier !== undefined ? agent.agentIdentifier : '',
       auto_generate_name: options.autoGenerateName !== false
     }
 
@@ -82,11 +100,15 @@ class ChatService {
         } 
         // 处理普通文件
         else {
+          // 确保transfer_method是有效的值
+          const validTransferMethods = ['remote_url', 'local_file']
+          const transferMethod = validTransferMethods.includes(file.transfer_method) ? file.transfer_method : 'remote_url'
+          
           return {
             type: file.type,
-            transfer_method: file.transfer_method,
-            url: file.transfer_method === 'remote_url' ? file.url : undefined,
-            upload_file_id: file.transfer_method === 'local_file' ? file.upload_file_id : undefined
+            transfer_method: transferMethod,
+            url: transferMethod === 'remote_url' ? file.url : undefined,
+            upload_file_id: transferMethod === 'local_file' ? file.upload_file_id : undefined
           }
         }
       })

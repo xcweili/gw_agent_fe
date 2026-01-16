@@ -121,7 +121,7 @@
                         <el-icon><Edit /></el-icon>
                         编辑智能体
                       </el-dropdown-item>
-                      <el-dropdown-item command="duplicate" :disabled="!canManageAgents">
+                      <el-dropdown-item command="duplicate" :disabled="!canEditAgent(agent)">
                         <el-icon><CopyDocument /></el-icon>
                         复制智能体
                       </el-dropdown-item>
@@ -264,6 +264,18 @@
                 </el-form-item>
               </el-col>
               <el-col :span="12">
+                <el-form-item label="智能体标识" prop="agentIdentifier">
+                  <el-input
+                    v-model="newAgent.agentIdentifier"
+                    placeholder="请输入唯一标识符（字母、数字、下划线、连字符）"
+                    maxlength="50"
+                    show-word-limit
+                  >
+                    <template #prepend>ID</template>
+                  </el-input>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
                 <el-form-item label="状态">
                   <el-switch
                     v-model="newAgent.status"
@@ -274,35 +286,40 @@
                   />
                 </el-form-item>
               </el-col>
+              <el-col :span="12">
+                <el-form-item label="是否公开">
+                  <el-switch
+                    v-model="newAgent.isPublic"
+                    active-text="公开"
+                    inactive-text="私有"
+                    :active-value="true"
+                    :inactive-value="false"
+                  >
+                    <template #active-text>
+                      <span>公开</span>
+                      <el-tooltip content="所有用户都可以看到此智能体，但只能查看不能编辑">
+                        <el-icon class="info-icon"><InfoFilled /></el-icon>
+                      </el-tooltip>
+                    </template>
+                  </el-switch>
+                </el-form-item>
+              </el-col>
             </el-row>
           </el-form>
         </el-tab-pane>
 
         <el-tab-pane label="模型配置" name="model">
           <el-form label-position="top">
-            <el-row :gutter="20">
-              <el-col :span="24">
-                <el-form-item label="API 地址" prop="apiUrl">
-                  <el-input
-                    v-model="newAgent.apiUrl"
-                    placeholder="https://api.openai.com/v1/chat/completions"
-                  >
-                    <template #prepend>URL</template>
-                  </el-input>
-                </el-form-item>
-              </el-col>
-              <el-col :span="24">
-                <el-form-item label="API Key" prop="apiKey">
-                  <el-input
-                    v-model="newAgent.apiKey"
-                    placeholder="sk-..."
-                    type="password"
-                    show-password
-                  />
-                </el-form-item>
-              </el-col>
-
-            </el-row>
+            <div class="model-info-section">
+              <el-alert
+                title="模型配置已预设"
+                type="info"
+                description="系统已为您预设了 Dify Workflow 的 API 配置，无需手动设置。"
+                show-icon
+                :closable="false"
+                class="model-info-alert"
+              />
+            </div>
           </el-form>
         </el-tab-pane>
 
@@ -371,7 +388,7 @@
 </template>
 
 <script>
-import { ArrowLeft, Plus, Delete, MoreFilled, Edit, CopyDocument, Grid, List, Right, Upload, User, View, Rank, Check, Close, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Delete, MoreFilled, Edit, CopyDocument, Grid, List, Right, Upload, User, View, Rank, Check, Close, Refresh, InfoFilled } from '@element-plus/icons-vue'
 import { backendService } from '../services/backendService'
 import draggable from 'vuedraggable'
 
@@ -394,6 +411,7 @@ export default {
     Check,
     Close,
     Refresh,
+    InfoFilled,
     draggable
   },
   inject: {
@@ -417,11 +435,11 @@ export default {
         name: '',
         description: '',
         type: 'general',
-        apiUrl: '',
-        apiKey: '',
+        agentIdentifier: '',
         icon: '',
         questions: [''],
-        status: 'online'
+        status: 'online',
+        isPublic: false
       },
       agentFormRules: {
         name: [
@@ -432,12 +450,10 @@ export default {
           { required: true, message: '请输入智能体简介', trigger: 'blur' },
           { min: 5, max: 200, message: '简介长度在 5-200 个字符', trigger: 'blur' }
         ],
-        apiUrl: [
-          { required: true, message: '请输入API地址', trigger: 'blur' },
-          { type: 'url', message: '请输入有效的URL地址', trigger: 'blur' }
-        ],
-        apiKey: [
-          { required: true, message: '请输入API Key', trigger: 'blur' }
+        agentIdentifier: [
+          { required: true, message: '请输入智能体标识', trigger: 'blur' },
+          { min: 3, max: 50, message: '标识长度在 3-50 个字符', trigger: 'blur' },
+          { pattern: /^[a-zA-Z0-9_-]+$/, message: '标识只能包含字母、数字、下划线和连字符', trigger: 'blur' }
         ]
       },
       defaultIcon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzQwOUVGRiIvPjxwYXRoIGQ9Ik0xMiAyTDEzLjA5IDguMjZMMjAgOUwxMy4wOSAxNS43NEwxMiAyMkwxMC45MSAxNS43NEw0IDlMMTAuOTEgOC4yNkwxMiAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4='
@@ -450,10 +466,13 @@ export default {
     filteredAgents() {
       let result = [...this.agents]
       
-      // 权限过滤：管理员可以看到所有智能体，其他用户只能看到自己创建的智能体
+      // 权限过滤：管理员可以看到所有智能体
+      // 其他用户可以看到自己创建的智能体和公开的智能体
       const currentUser = this.getCurrentUser()
       if (!this.getIsAdmin() && currentUser?.username) {
-        result = result.filter(agent => agent.createdBy === currentUser.username)
+        result = result.filter(agent => 
+          agent.createdBy === currentUser.username || agent.isPublic
+        )
       }
       
       if (this.searchKeyword) {
@@ -592,15 +611,11 @@ export default {
         name: '',
         description: '',
         type: 'general',
-        apiUrl: '',
-        apiKey: '',
-        model: 'gpt-4',
-        temperature: 0.7,
-        maxTokens: 4096,
-        systemPrompt: '',
+        agentIdentifier: '',
         icon: '',
         questions: [''],
-        status: 'online'
+        status: 'online',
+        isPublic: false
       }
       this.$refs.agentForm?.resetFields()
     },
@@ -617,15 +632,11 @@ export default {
         name: agent.name,
         description: agent.description,
         type: agent.type || 'general',
-        apiUrl: agent.apiUrl,
-        apiKey: agent.apiKey,
-        model: agent.model || 'gpt-4',
-        temperature: agent.temperature || 0.7,
-        maxTokens: agent.maxTokens || 4096,
-        systemPrompt: agent.systemPrompt || '',
+        agentIdentifier: agent.agentIdentifier || '',
         icon: agent.icon,
         questions: [...(agent.questions || [''])],
-        status: agent.status || 'online'
+        status: agent.status || 'online',
+        isPublic: agent.isPublic || false
       }
       this.showCreateDialog = true
     },
@@ -635,6 +646,7 @@ export default {
         ...agent,
         name: `${agent.name} (副本)`,
         id: Date.now().toString(),
+        agentIdentifier: `${agent.agentIdentifier}_copy_${Date.now()}`,
         createdBy: this.getCurrentUser()?.username,
         createdAt: new Date().toISOString(),
         usageCount: 0
@@ -659,15 +671,11 @@ export default {
               name: this.newAgent.name,
               description: this.newAgent.description,
               type: this.newAgent.type,
-              apiUrl: this.newAgent.apiUrl,
-              apiKey: this.newAgent.apiKey,
-              model: this.newAgent.model,
-              temperature: this.newAgent.temperature,
-              maxTokens: this.newAgent.maxTokens,
-              systemPrompt: this.newAgent.systemPrompt,
+              agentIdentifier: this.newAgent.agentIdentifier,
               icon: this.newAgent.icon,
               questions: this.newAgent.questions.filter(q => q.trim()),
-              status: this.newAgent.status
+              status: this.newAgent.status,
+              isPublic: this.newAgent.isPublic
             }
             
             await backendService.updateAgent(this.editingAgentId, agentData)
@@ -718,7 +726,10 @@ export default {
               questions: this.newAgent.questions.filter(q => q.trim()),
               createdBy: this.getCurrentUser()?.username,
               createdAt: new Date().toISOString(),
-              usageCount: 0
+              usageCount: 0,
+              // 设置固定的API URL和API Key
+              apiUrl: 'http://10.255.216.2:8083/v1/workflows/run',
+              apiKey: 'app-eOFxeRHMBoEZWxX5y2aOVww9'
             }
             
             await backendService.createAgent(agentData)

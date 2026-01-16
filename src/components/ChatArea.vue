@@ -101,14 +101,13 @@
 
                 <div class="message-bubble" :class="message.role">
                   <div v-if="message.think" class="think-section">
-                    <div class="think-header" @click="toggleThink(message.id)">
-                      <el-icon><View /></el-icon>
-                      <span>思考过程 {{ thinkExpanded[message.id] ? '▲' : '▼' }}</span>
+                      <div class="think-header" @click="toggleThink(message.id)">
+                        <el-icon><View /></el-icon>
+                        <span>思考过程 {{ thinkExpanded[message.id] ? '▲' : '▼' }}</span>
+                      </div>
+                      <div class="think-content" :class="{ collapsed: !thinkExpanded[message.id] }" v-html="renderMarkdown(message.think)">
+                      </div>
                     </div>
-                    <div class="think-content" :class="{ collapsed: !thinkExpanded[message.id] }">
-                      {{ message.think }}
-                    </div>
-                  </div>
 
                   <div v-if="message.files && message.files.length > 0" class="message-files">
                     <div v-for="file in message.files" :key="file.name" class="file-item">
@@ -123,8 +122,8 @@
                     </div>
                   </div>
 
-                  <div class="message-text">
-                    {{ message.content }}
+                  <div class="message-text-container">
+                    <div class="message-text" v-html="renderMarkdown(message.content)"></div>
                     <span v-if="isLoading && message.id === lastAssistantMessageId" class="typing-indicator">
                       <span></span><span></span><span></span>
                     </span>
@@ -142,21 +141,7 @@
               </div>
             </div>
 
-            <div v-if="isLoading" class="message-wrapper assistant">
-              <div class="message-avatar">
-                <div class="agent-avatar-small">
-                  <img :src="selectedAgent.icon || defaultIcon" :alt="selectedAgent.name" />
-                </div>
-              </div>
-              <div class="message-content-wrapper">
-                <div class="message-role-name">{{ selectedAgent.name }}</div>
-                <div class="message-bubble assistant loading">
-                  <div class="typing-indicator">
-                    <span></span><span></span><span></span>
-                  </div>
-                </div>
-              </div>
-            </div>
+
           </div>
         </div>
 
@@ -231,6 +216,7 @@ import {
 import { chatService } from '../services/chatService'
 import { backendService } from '../services/backendService'
 import { ElMessageBox } from 'element-plus'
+import { marked } from 'marked'
 
 export default {
   name: 'ChatArea',
@@ -341,7 +327,10 @@ export default {
 
     async sendMessage() {
       if (!this.canSend || this.isLoading) return
-
+      
+      // 立即设置加载状态，防止重复发送请求
+      this.isLoading = true
+      
       const userMessage = this.inputMessage.trim()
       const files = [...this.uploadedFiles]
 
@@ -386,31 +375,19 @@ export default {
         timestamp: new Date().toISOString()
       })
 
-      this.isLoading = true
       this.$nextTick(() => this.scrollToBottom())
 
       try {
         // 从消息中的files获取已转换好的base64图片
         const base64Images = messageFiles ? messageFiles.filter(f => f.type && f.type.startsWith('image/')) : []
 
-        // 组装请求参数，满足dify的格式要求
-        const requestParams = {
-          agent: this.selectedAgent,
-          messages: this.messages.filter(m => m.id !== assistantMessageId),
-          userInput: userMessage
-        }
-
-        // 如果有图片，添加到请求参数中（根据dify的要求）
-        if (base64Images.length > 0) {
-          requestParams.images = base64Images
-        }
-
         const response = await chatService.sendMessage({
           agent: this.selectedAgent,
           messages: this.messages.filter(m => m.id !== assistantMessageId),
           userInput: userMessage,
           options: {
-            images: base64Images
+            images: base64Images,
+            responseMode: 'streaming' // 默认使用streaming模式
           }
         })
 
@@ -419,7 +396,15 @@ export default {
           if (response.think) {
             assistantMessage.think = response.think
           }
-          this.simulateStreamingResponse(assistantMessage, response.content)
+          // 根据响应模式处理返回内容
+          if (response.response_mode === 'blocking' || !response.content) {
+            // blocking模式直接显示完整内容
+            assistantMessage.content = response.content || '暂无响应'
+            this.isLoading = false
+          } else {
+            // streaming模式模拟打字效果
+            this.simulateStreamingResponse(assistantMessage, response.content)
+          }
         }
       } catch (error) {
         console.error('发送消息失败:', error)
@@ -466,6 +451,11 @@ export default {
 
     copyMessage(content) {
       navigator.clipboard.writeText(content)
+    },
+
+    renderMarkdown(content) {
+      if (!content) return ''
+      return marked(content)
     },
 
     regenerateMessage(message) {

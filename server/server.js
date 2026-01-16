@@ -170,9 +170,11 @@ app.get('/api/agents', (req, res) => {
 
   if (userRole !== 'admin') {
     agents = agents.filter(agent => {
-      if (agent.createdBy === username) {
+      // 用户可以看到自己创建的智能体和公开的智能体
+      if (agent.createdBy === username || agent.isPublic) {
         return true
       }
+      // 保留原有可见角色的逻辑作为备用
       const visibleRoles = agent.visibleRoles || []
       if (typeof visibleRoles === 'string') {
         return visibleRoles === 'all' || visibleRoles.includes(userRole)
@@ -197,8 +199,13 @@ app.get('/api/agents/:id', (req, res) => {
   }
 
   if (userRole !== 'admin' && agent.createdBy !== username) {
+    // 非管理员用户可以访问公开的智能体
+    if (agent.isPublic) {
+      return res.json(agent)
+    }
+    // 保留原有可见角色的逻辑作为备用
     const visibleRoles = agent.visibleRoles || []
-    const isVisible =
+    const isVisible = 
       visibleRoles === 'all' ||
       (Array.isArray(visibleRoles) && visibleRoles.includes(userRole))
     if (!isVisible) {
