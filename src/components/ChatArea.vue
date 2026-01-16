@@ -387,24 +387,35 @@ export default {
           userInput: userMessage,
           options: {
             images: base64Images,
-            responseMode: 'streaming' // 默认使用streaming模式
+            responseMode: 'streaming', // 默认使用streaming模式
+            onChunk: (chunk) => {
+              // 实时更新assistantMessage的内容
+              const assistantMessage = this.messages.find(m => m.id === assistantMessageId)
+              if (assistantMessage) {
+                if (chunk.content) {
+                  assistantMessage.content = chunk.content
+                }
+                if (chunk.think) {
+                  assistantMessage.think = chunk.think
+                }
+                // 每次更新后滚动到底部
+                this.$nextTick(() => this.scrollToBottom())
+              }
+            }
           }
         })
 
         const assistantMessage = this.messages.find(m => m.id === assistantMessageId)
         if (assistantMessage) {
+          // 最终处理响应结果
           if (response.think) {
             assistantMessage.think = response.think
           }
-          // 根据响应模式处理返回内容
-          if (response.response_mode === 'blocking' || !response.content) {
-            // blocking模式直接显示完整内容
-            assistantMessage.content = response.content || '暂无响应'
-            this.isLoading = false
-          } else {
-            // streaming模式模拟打字效果
-            this.simulateStreamingResponse(assistantMessage, response.content)
+          if (response.content) {
+            assistantMessage.content = response.content
           }
+          this.isLoading = false
+          this.$nextTick(() => this.scrollToBottom())
         }
       } catch (error) {
         console.error('发送消息失败:', error)

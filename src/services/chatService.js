@@ -11,6 +11,7 @@ class ChatService {
     const apiUrl = agent.apiUrl || 'http://10.255.216.2:8083/v1/workflows/run'
     const apiKey = agent.apiKey || 'app-eOFxeRHMBoEZWxX5y2aOVww9'
     const responseMode = options.responseMode || 'streaming'
+    const onChunk = options.onChunk // 添加回调参数
 
     try {
       const requestBody = this.buildRequestBody(userInput, messages, files, options, agent)
@@ -33,7 +34,7 @@ class ChatService {
 
       let fullResponse
       if (responseMode === 'streaming') {
-        fullResponse = await this.processStreamResponse(response.data)
+        fullResponse = await this.processStreamResponse(response.data, onChunk)
       } else {
         // blocking模式直接处理响应数据
         fullResponse = {
@@ -103,7 +104,7 @@ class ChatService {
     return body
   }
 
-  async processStreamResponse(streamData) {
+  async processStreamResponse(streamData, onChunk) {
     return new Promise((resolve) => {
       let fullContent = ''
       let thinkContent = ''
@@ -158,12 +159,21 @@ class ChatService {
                   setMessageId: (id) => { messageId = id },
                   setTaskId: (id) => { taskId = id },
                   setUsage: (u) => { usage = u },
-                  setRetrieverResources: (r) => { retrieverResources = r }
+                  setRetrieverResources: (r) => { retrieverResources = r },
+                  onChunk // 传递回调函数
                 })
               } catch (e) {
                 // 忽略解析错误
               }
             }
+          }
+
+          // 每次处理完一批数据后调用回调，实时更新UI
+          if (onChunk && (fullContent || thinkContent)) {
+            onChunk({
+              content: fullContent,
+              think: thinkContent
+            })
           }
 
           processChunk()
