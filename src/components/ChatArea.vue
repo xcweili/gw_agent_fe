@@ -253,7 +253,7 @@ export default {
   },
   computed: {
     lastAssistantMessageId() {
-      const assistantMessages = this.messages.filter(m => m.role === 'assistant' && m.content)
+      const assistantMessages = this.messages.filter(m => m.role === 'assistant')
       return assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].id : null
     },
     canSend() {
@@ -1037,7 +1037,7 @@ export default {
 }
 
 .message-text {
-  white-space: pre-wrap;
+  /* white-space: pre-wrap; */
   word-break: break-word;
 }
 

@@ -62,31 +62,17 @@ class ChatService {
   }
 
   buildRequestBody(userInput, messages, files, options = {}, agent = {}) {
+    // 严格遵循curl示例的格式，只包含必要的参数
     const body = {
-      query: userInput,
-      inputs: options.inputs || {},
+      inputs: {
+        input: userInput
+      },
       response_mode: options.responseMode || 'streaming',
-      user: agent.agentIdentifier !== undefined ? agent.agentIdentifier : '',
-      auto_generate_name: options.autoGenerateName !== false
+      user: agent.agentIdentifier !== undefined ? agent.agentIdentifier : ''
     }
 
-    if (this.currentConversation) {
-      body.conversation_id = this.currentConversation
-    }
-
-    if (options.conversationId) {
-      body.conversation_id = options.conversationId
-    }
-
-    if (options.workflowId) {
-      body.workflow_id = options.workflowId
-    }
-
-    if (options.traceId) {
-      body.trace_id = options.traceId
-    }
-
-    // 处理图片和文件
+    // 保持文件处理逻辑，但需要确认API是否支持
+    // 由于curl示例中没有文件参数，可能需要与后端确认是否支持
     const allFiles = [...(files || []), ...(options.images || [])]
     if (allFiles.length > 0) {
       body.files = allFiles.map(file => {
