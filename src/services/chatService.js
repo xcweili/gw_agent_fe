@@ -7,55 +7,60 @@ class ChatService {
   }
 
   async sendMessage({ agent, messages, userInput, files = [], options = {} }) {
-    // 使用固定的API URL和API Key，从agent对象中获取
     const apiUrl = agent.apiUrl || 'http://10.255.216.2:8083/v1/workflows/run'
     const apiKey = agent.apiKey || 'app-eOFxeRHMBoEZWxX5y2aOVww9'
     const responseMode = options.responseMode || 'streaming'
-    const onChunk = options.onChunk // 添加回调参数
+    const onChunk = options.onChunk
 
     try {
       const requestBody = this.buildRequestBody(userInput, messages, files, options, agent)
 
       const headers = {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'Accept': responseMode === 'streaming' ? 'text/event-stream' : 'application/json'
+        'Content-Type': 'application/json'
       }
 
       if (options.traceId) {
         headers['X-Trace-Id'] = options.traceId
       }
 
-      const response = await axios.post(apiUrl, requestBody, {
-        headers,
-        timeout: options.timeout || 120000,
-        responseType: responseMode === 'streaming' ? 'stream' : 'json'
-      })
-
-      let fullResponse
       if (responseMode === 'streaming') {
-        fullResponse = await this.processStreamResponse(response.data, onChunk)
+        // 在streaming模式下，不等待请求完成，而是立即返回，同时在后台处理流式数据
+        // 这样onChunk回调可以实时被调用
+        this.sendStreamingRequest(apiUrl, requestBody, headers, onChunk)
+        // 立即返回一个空的response，让前端知道请求已经开始
+        return {
+          content: '',
+          think: null,
+          conversation_id: null,
+          message_id: null,
+          task_id: null,
+          usage: null,
+          retriever_resources: [],
+          response_mode: responseMode
+        }
       } else {
-        // blocking模式直接处理响应数据
-        fullResponse = {
+        const response = await axios.post(apiUrl, requestBody, {
+          headers,
+          timeout: options.timeout || 120000
+        })
+        const fullResponse = {
           content: response.data.content || '抱歉，我无法生成合适的回答。',
           think: response.data.think || null,
           conversation_id: response.data.conversation_id,
           message_id: response.data.message_id,
           task_id: response.data.task_id,
           usage: response.data.usage,
-          retriever_resources: response.data.retriever_resources
+          retriever_resources: response.data.retriever_resources,
+          response_mode: responseMode
         }
-      }
+        
+        if (fullResponse.conversation_id) {
+          this.currentConversation = fullResponse.conversation_id
+        }
 
-      // 添加响应模式到返回结果
-      fullResponse.response_mode = responseMode
-      
-      if (fullResponse.conversation_id) {
-        this.currentConversation = fullResponse.conversation_id
+        return fullResponse
       }
-
-      return fullResponse
     } catch (error) {
       console.error('发送消息失败:', error)
       throw new Error(`API请求失败: ${error.message}`)
@@ -104,154 +109,400 @@ class ChatService {
     return body
   }
 
-  async processStreamResponse(streamData, onChunk) {
-    return new Promise((resolve) => {
+  async sendStreamingRequest(url, body, headers, onChunk) {
+    // 直接处理流式请求，不返回Promise，确保后台运行
+    fetch(url, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(body)
+    }).then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
       let fullContent = ''
       let thinkContent = ''
-      let conversationId = null
-      let messageId = null
-      let taskId = null
-      let usage = null
       let retrieverResources = []
-
-      const reader = streamData.getReader()
-      const decoder = new TextDecoder()
       let buffer = ''
 
       const processChunk = async () => {
         try {
           const { done, value } = await reader.read()
           if (done) {
-            resolve({
-              content: fullContent || '抱歉，我无法生成合适的回答。',
-              think: thinkContent || null,
-              conversation_id: conversationId,
-              message_id: messageId,
-              task_id: taskId,
-              usage: usage,
-              retriever_resources: retrieverResources
-            })
             return
           }
 
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
+          // 立即解码并处理新数据
+          const chunkText = decoder.decode(value, { stream: true })
+          
+          // 直接将新数据添加到buffer
+          buffer += chunkText
+          
+          // 处理所有可能的格式
+          let processed = false
+          
+          // 1. 尝试处理SSE格式
+          if (buffer.includes('data: ')) {
+            processed = true
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const dataStr = line.slice(6).trim()
-              if (!dataStr) continue
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const dataStr = line.slice(6).trim()
+                if (!dataStr) continue
 
-              try {
-                const parsed = JSON.parse(dataStr)
-                this.handleStreamEvent(parsed, {
-                  fullContent,
-                  thinkContent,
-                  conversationId,
-                  messageId,
-                  taskId,
-                  usage,
-                  retrieverResources,
-                  updateFullContent: (text) => { fullContent += text },
-                  updateThinkContent: (text) => { thinkContent += text },
-                  setConversationId: (id) => { conversationId = id },
-                  setMessageId: (id) => { messageId = id },
-                  setTaskId: (id) => { taskId = id },
-                  setUsage: (u) => { usage = u },
-                  setRetrieverResources: (r) => { retrieverResources = r },
-                  onChunk // 传递回调函数
-                })
-              } catch (e) {
-                // 忽略解析错误
+                try {
+                  // 检查数据是否是HTML格式
+                  if (dataStr.startsWith('<!DOCTYPE') || dataStr.startsWith('<html')) {
+                    console.error('收到HTML响应，可能是服务器错误:', dataStr.substring(0, 100) + '...')
+                    // 尝试从HTML中提取错误信息
+                    const errorMatch = dataStr.match(/<title>(.*?)<\/title>/i)
+                    const errorMessage = errorMatch ? errorMatch[1] : '服务器错误'
+                    // 调用onChunk显示错误信息
+                    if (onChunk) {
+                      onChunk({
+                        content: `服务器错误: ${errorMessage}`,
+                        think: thinkContent
+                      })
+                    }
+                    return
+                  }
+                  
+                  // 检查数据是否是JSON格式
+                  let parsed
+                  try {
+                    parsed = JSON.parse(dataStr)
+                  } catch (e) {
+                    console.error('数据不是有效的JSON格式:', dataStr)
+                    continue
+                  }
+                  
+                  // 使用processStreamData方法处理解析后的数据
+                  const updatedContent = this.processStreamData(parsed, fullContent, thinkContent, onChunk)
+                  fullContent = updatedContent.fullContent
+                  thinkContent = updatedContent.thinkContent
+                  retrieverResources = updatedContent.retrieverResources
+                } catch (e) {
+                  console.error('解析SSE数据失败:', e, dataStr)
+                  // 尝试处理非JSON格式的数据
+                  if (typeof dataStr === 'string' && dataStr.trim()) {
+                    // 检查是否是纯文本
+                    if (!dataStr.includes('{') && !dataStr.includes('[')) {
+                      // 直接将纯文本添加到fullContent
+                      fullContent += dataStr
+                      if (onChunk) {
+                        onChunk({
+                          content: fullContent,
+                          think: thinkContent,
+                          retrieverResources: retrieverResources
+                        })
+                      }
+                    }
+                  }
+                }
               }
             }
           }
+          
+          // 2. 尝试处理JSON数组流（如：[1, 2, 3]）
+          if (!processed && buffer.startsWith('[') && buffer.endsWith(']')) {
+            processed = true
+            try {
+              const parsed = JSON.parse(buffer)
+              if (Array.isArray(parsed)) {
+                for (const item of parsed) {
+                  const updatedContent = this.processStreamData(item, fullContent, thinkContent, onChunk)
+                  fullContent = updatedContent.fullContent
+                  thinkContent = updatedContent.thinkContent
+                  retrieverResources = updatedContent.retrieverResources
+                }
+              }
+              buffer = ''
+            } catch (e) {
+              console.error('解析JSON数组失败:', e, buffer)
+            }
+          }
+          
+          // 3. 尝试处理单个JSON对象流（如：{"content": "hello"}）
+          if (!processed && buffer.startsWith('{') && buffer.endsWith('}')) {
+            processed = true
+            try {
+              const parsed = JSON.parse(buffer)
+              const updatedContent = this.processStreamData(parsed, fullContent, thinkContent, onChunk)
+              fullContent = updatedContent.fullContent
+              thinkContent = updatedContent.thinkContent
+              retrieverResources = updatedContent.retrieverResources
+              buffer = ''
+            } catch (e) {
+              console.error('解析单个JSON失败:', e, buffer)
+            }
+          }
+          
+          // 4. 尝试处理多行JSON流（每行一个JSON对象）
+          if (!processed && buffer.includes('\n')) {
+            processed = true
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
 
-          // 每次处理完一批数据后调用回调，实时更新UI
-          if (onChunk && (fullContent || thinkContent)) {
-            onChunk({
-              content: fullContent,
-              think: thinkContent
-            })
+            for (const line of lines) {
+              if (line.trim()) {
+                try {
+                  const parsed = JSON.parse(line)
+                  const updatedContent = this.processStreamData(parsed, fullContent, thinkContent, onChunk)
+                  fullContent = updatedContent.fullContent
+                  thinkContent = updatedContent.thinkContent
+                  retrieverResources = updatedContent.retrieverResources
+                } catch (e) {
+                  console.error('解析多行JSON失败:', e, line)
+                }
+              }
+            }
+          }
+          
+          // 5. 尝试处理增量JSON流（如：{"content": "h"}{"content": "e"}{"content": "l"}）
+          if (!processed) {
+            let cursor = 0
+            while (cursor < buffer.length) {
+              // 查找下一个JSON对象的开始和结束
+              const startIndex = buffer.indexOf('{', cursor)
+              if (startIndex === -1) break
+              
+              // 尝试找到匹配的结束括号
+              let depth = 0
+              let endIndex = -1
+              for (let i = startIndex; i < buffer.length; i++) {
+                if (buffer[i] === '{') depth++
+                if (buffer[i] === '}') depth--
+                if (depth === 0) {
+                  endIndex = i + 1
+                  break
+                }
+              }
+              
+              if (endIndex !== -1) {
+                // 提取并解析JSON对象
+                const jsonStr = buffer.substring(startIndex, endIndex)
+                try {
+                  const parsed = JSON.parse(jsonStr)
+                  const updatedContent = this.processStreamData(parsed, fullContent, thinkContent, onChunk)
+                  fullContent = updatedContent.fullContent
+                  thinkContent = updatedContent.thinkContent
+                  retrieverResources = updatedContent.retrieverResources
+                  
+                  // 更新cursor，继续处理剩余数据
+                  cursor = endIndex
+                } catch (e) {
+                  // 解析失败，退出循环
+                  console.error('解析增量JSON失败:', e, jsonStr)
+                  break
+                }
+              } else {
+                // 没有找到匹配的结束括号，退出循环
+                break
+              }
+            }
+            
+            // 更新buffer为剩余未处理的数据
+            buffer = buffer.substring(cursor)
           }
 
+          // 继续处理下一个chunk
           processChunk()
         } catch (error) {
           console.error('处理流响应出错:', error)
-          resolve({
-            content: fullContent || '处理响应时出错',
-            think: thinkContent || null,
-            conversation_id: conversationId,
-            message_id: messageId,
-            task_id: taskId,
-            usage: usage,
-            retriever_resources: retrieverResources
-          })
         }
       }
 
       processChunk()
+    }).catch(error => {
+      console.error('API请求失败:', error)
     })
   }
-
-  handleStreamEvent(event, state) {
-    switch (event.event) {
-      case 'message':
-      case 'agent_message':
-        if (event.answer) {
-          state.updateFullContent(event.answer)
-        }
-        if (event.conversation_id) {
-          state.setConversationId(event.conversation_id)
-        }
-        if (event.message_id) {
-          state.setMessageId(event.message_id)
-        }
-        if (event.task_id) {
-          state.setTaskId(event.task_id)
-        }
-        break
-
-      case 'agent_thought':
-        if (event.thought) {
-          state.updateThinkContent(`\n[思考 ${event.position || ''}] ${event.thought}\n`)
-        }
-        if (event.observation) {
-          state.updateThinkContent(`[观察] ${event.observation}\n`)
-        }
-        break
-
-      case 'message_file':
-        break
-
-      case 'message_end':
-        if (event.metadata) {
-          if (event.metadata.usage) {
-            state.setUsage(event.metadata.usage)
+  
+  // 处理流数据的通用方法，返回更新后的内容对象
+  processStreamData(parsed, fullContent, thinkContent, onChunk) {
+    // 处理不同格式的响应
+    let content = ''
+    let thought = ''
+    let isContentUpdated = false
+    let updatedFullContent = fullContent
+    let updatedThinkContent = thinkContent
+    let skipOnChunk = false // 标记是否跳过末尾的onChunk调用
+    let retrieverResources = [] // 知识检索结果
+    
+    // 确保parsed是有效的对象
+    if (!parsed || typeof parsed !== 'object') {
+      console.error('无效的解析数据:', parsed)
+      return {
+        fullContent: updatedFullContent,
+        thinkContent: updatedThinkContent,
+        retrieverResources: []
+      }
+    }
+    
+    // 1. 处理直接的content或answer字段
+    if (parsed.content) {
+      content = parsed.content
+      isContentUpdated = true
+    } else if (parsed.answer) {
+      content = parsed.answer
+      isContentUpdated = true
+    }
+    // 2. 处理OpenAI格式的choices字段
+    else if (parsed.choices && Array.isArray(parsed.choices) && parsed.choices.length > 0) {
+      const choice = parsed.choices[0]
+      if (choice && choice.delta?.content) {
+        content = choice.delta.content
+        isContentUpdated = true
+      }
+    }
+    // 3. 处理事件格式
+    else if (parsed.event) {
+      switch (parsed.event) {
+        // 处理思考过程
+        case 'agent_thought':
+          if (parsed.thought) {
+            thought = `\n[思考 ${parsed.position || ''}] ${parsed.thought}\n`
+            isContentUpdated = true
           }
-          if (event.metadata.retriever_resources) {
-            state.setRetrieverResources(event.metadata.retriever_resources)
+          break
+          
+        // 处理消息替换
+        case 'message_replace':
+          if (parsed.answer || parsed.content) {
+            updatedFullContent = parsed.answer || parsed.content
+            isContentUpdated = true
+            skipOnChunk = true // 跳过末尾的onChunk调用，因为这里已经调用了
+            // 对于 message_replace 事件，直接调用 onChunk 替换整个内容
+            if (onChunk) {
+              onChunk({
+                content: updatedFullContent,
+                think: updatedThinkContent,
+                retrieverResources: retrieverResources
+              })
+            }
           }
-        }
-        break
+          break
+          
+        // 处理工作流结束事件
+        case 'workflow_finished':
+          if (parsed.data) {
+            // 从data中提取结果
+            if (parsed.data.result) {
+              updatedFullContent = parsed.data.result
+              isContentUpdated = true
+            } else if (parsed.data.output) {
+              updatedFullContent = parsed.data.output
+              isContentUpdated = true
+            } else if (parsed.data.content) {
+              updatedFullContent = parsed.data.content
+              isContentUpdated = true
+            } else if (parsed.data.answer) {
+              updatedFullContent = parsed.data.answer
+              isContentUpdated = true
+            } else if (parsed.data.outputs && typeof parsed.data.outputs === 'object') {
+              // 遍历outputs，查找可能的结果
+              for (const key in parsed.data.outputs) {
+                if (parsed.data.outputs.hasOwnProperty(key)) {
+                  const outputValue = parsed.data.outputs[key]
+                  if (typeof outputValue === 'string') {
+                    updatedFullContent = outputValue
+                    isContentUpdated = true
+                    break
+                  } else if (outputValue?.content) {
+                    updatedFullContent = outputValue.content
+                    isContentUpdated = true
+                    break
+                  } else if (outputValue?.answer) {
+                    updatedFullContent = outputValue.answer
+                    isContentUpdated = true
+                    break
+                  }
+                }
+              }
+            }
+            // 对于 workflow_finished 事件，直接调用 onChunk 更新最终内容
+            if (isContentUpdated && onChunk) {
+              skipOnChunk = true // 跳过末尾的onChunk调用，因为这里已经调用了
+              onChunk({
+                content: updatedFullContent,
+                think: updatedThinkContent,
+                retrieverResources: retrieverResources
+              })
+            }
+          }
+          break
+          
+        // 处理其他消息事件
+        case 'message':
+        case 'agent_message':
+          if (parsed.answer || parsed.content) {
+            content = parsed.answer || parsed.content
+            isContentUpdated = true
+          }
+          break
 
-      case 'message_replace':
-        if (event.answer) {
-          state.fullContent = event.answer
-        }
-        break
+        // 处理节点完成事件（知识检索等）
+        case 'node_finished':
+          if (parsed.data && parsed.data.outputs && parsed.data.outputs.result) {
+            const result = parsed.data.outputs.result
+            if (Array.isArray(result) && result.length > 0) {
+              // 提取知识检索结果中的内容
+              retrieverResources = result.map(item => ({
+                title: item.title || item.document_name || '',
+                content: item.content || ''
+              })).filter(r => r.content)
+            }
+          }
+          break
 
-      case 'error':
-        console.error('流式响应错误:', event.message)
-        break
-
-      case 'ping':
-        break
+        // 处理文本块事件（流式文本）
+        case 'text_chunk':
+          if (parsed.data && parsed.data.text) {
+            content = parsed.data.text
+            isContentUpdated = true
+          }
+          break
+      }
+    }
+    
+    // 更新内容并调用onChunk
+    if (isContentUpdated && !skipOnChunk) {
+      // 更新fullContent和thinkContent
+      if (content) {
+        updatedFullContent += content
+      }
+      if (thought) {
+        updatedThinkContent += thought
+      }
+      
+      // 立即调用onChunk回调，更新UI
+      if (onChunk) {
+        onChunk({
+          content: updatedFullContent,
+          think: updatedThinkContent,
+          retrieverResources: retrieverResources
+        })
+      }
+    } else if (retrieverResources.length > 0 && onChunk) {
+      // 如果只有知识检索结果更新，也调用onChunk
+      onChunk({
+        content: updatedFullContent,
+        think: updatedThinkContent,
+        retrieverResources: retrieverResources
+      })
+    }
+    
+    // 返回更新后的内容
+    return {
+      fullContent: updatedFullContent,
+      thinkContent: updatedThinkContent,
+      retrieverResources: retrieverResources
     }
   }
-
-
 }
 
 export const chatService = new ChatService()

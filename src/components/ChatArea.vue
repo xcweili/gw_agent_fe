@@ -109,6 +109,19 @@
                       </div>
                     </div>
 
+                  <div v-if="message.retrieverResources && message.retrieverResources.length > 0" class="retriever-resources">
+                    <div class="retriever-header" @click="toggleRetriever(message.id)">
+                      <el-icon><Document /></el-icon>
+                      <span>知识检索结果 ({{ message.retrieverResources.length }}) {{ retrieverExpanded[message.id] ? '▲' : '▼' }}</span>
+                    </div>
+                    <div class="retriever-content" :class="{ collapsed: !retrieverExpanded[message.id] }">
+                      <div v-for="(resource, index) in message.retrieverResources" :key="index" class="retriever-item">
+                        <div class="retriever-item-title">{{ resource.title || `来源 ${index + 1}` }}</div>
+                        <div class="retriever-item-content" v-html="renderMarkdown(resource.content)"></div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div v-if="message.files && message.files.length > 0" class="message-files">
                     <div v-for="file in message.files" :key="file.name" class="file-item">
                       <div v-if="file.type && file.type.startsWith('image/')" class="image-preview-container">
@@ -203,31 +216,24 @@
 
 <script>
 import {
-  DocumentAdd,
-  Promotion,
   View,
   Document,
   CopyDocument,
   Refresh,
-  Delete,
   Plus,
   Close
 } from '@element-plus/icons-vue'
 import { chatService } from '../services/chatService'
 import { backendService } from '../services/backendService'
-import { ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
 
 export default {
   name: 'ChatArea',
   components: {
-    DocumentAdd,
-    Promotion,
     View,
     Document,
     CopyDocument,
     Refresh,
-    Delete,
     Plus,
     Close
   },
@@ -246,6 +252,7 @@ export default {
       inputMessage: '',
       isLoading: false,
       thinkExpanded: {},
+      retrieverExpanded: {},
       uploadedFiles: [],
       recentAgents: [],
       defaultIcon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzQwOUVGRiIvPjxwYXRoIGQ9Ik0xMiAyTDEzLjA5IDguMjZMMjAgOUwxMy4wOSAxNS43NEwxMiAyMkwxMC45MSAxNS43NEw0IDlMMTAuOTEgOC4yNkwxMiAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4='
@@ -303,17 +310,8 @@ export default {
       this.messages = []
       this.inputMessage = ''
       this.thinkExpanded = {}
+      this.retrieverExpanded = {}
       this.uploadedFiles = []
-    },
-
-    confirmClearChat() {
-      ElMessageBox.confirm('确定要清空当前对话吗？', '确认', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(() => {
-        this.startNewChat()
-      }).catch(() => {})
     },
 
     handleShiftEnter(event) {
@@ -372,6 +370,7 @@ export default {
         role: 'assistant',
         content: '',
         think: null,
+        retrieverResources: [],
         timestamp: new Date().toISOString()
       })
 
@@ -381,7 +380,8 @@ export default {
         // 从消息中的files获取已转换好的base64图片
         const base64Images = messageFiles ? messageFiles.filter(f => f.type && f.type.startsWith('image/')) : []
 
-        const response = await chatService.sendMessage({
+        // 不使用await，因为chatService.sendMessage在流式模式下会立即返回
+        chatService.sendMessage({
           agent: this.selectedAgent,
           messages: this.messages.filter(m => m.id !== assistantMessageId),
           userInput: userMessage,
@@ -389,34 +389,38 @@ export default {
             images: base64Images,
             responseMode: 'streaming', // 默认使用streaming模式
             onChunk: (chunk) => {
-              // 实时更新assistantMessage的内容
-              const assistantMessage = this.messages.find(m => m.id === assistantMessageId)
-              if (assistantMessage) {
-                if (chunk.content) {
-                  assistantMessage.content = chunk.content
+              // 收到第一个chunk后，立即停止loading
+              if (this.isLoading) {
+                this.isLoading = false;
+              }
+              
+              // 找到对应的助手消息
+              const messageIndex = this.messages.findIndex(m => m.id === assistantMessageId)
+              if (messageIndex !== -1) {
+                // Vue 3 不需要 $set，直接赋值即可触发响应式更新
+                this.messages[messageIndex].content = chunk.content;
+                this.messages[messageIndex].think = chunk.think;
+                
+                // 处理知识检索结果
+                if (chunk.retrieverResources && chunk.retrieverResources.length > 0) {
+                  this.messages[messageIndex].retrieverResources = chunk.retrieverResources;
                 }
-                if (chunk.think) {
-                  assistantMessage.think = chunk.think
-                }
-                // 每次更新后滚动到底部
-                this.$nextTick(() => this.scrollToBottom())
+                
+                // 滚动到底部
+                this.$nextTick(() => {
+                  this.scrollToBottom()
+                })
               }
             }
           }
-        })
-
-        const assistantMessage = this.messages.find(m => m.id === assistantMessageId)
-        if (assistantMessage) {
-          // 最终处理响应结果
-          if (response.think) {
-            assistantMessage.think = response.think
-          }
-          if (response.content) {
-            assistantMessage.content = response.content
+        }).catch(error => {
+          console.error('发送消息失败:', error)
+          const assistantMessage = this.messages.find(m => m.id === assistantMessageId)
+          if (assistantMessage) {
+            assistantMessage.content = '抱歉，出现了一些问题，请稍后再试。'
           }
           this.isLoading = false
-          this.$nextTick(() => this.scrollToBottom())
-        }
+        })
       } catch (error) {
         console.error('发送消息失败:', error)
         const assistantMessage = this.messages.find(m => m.id === assistantMessageId)
@@ -432,32 +436,12 @@ export default {
       this.sendMessage()
     },
 
-    simulateStreamingResponse(message, fullContent) {
-      let index = 0
-      const typeText = () => {
-        if (index < fullContent.length && this.messages.find(m => m.id === message.id)) {
-          const chunkSize = Math.random() > 0.8 ? 3 : (Math.random() > 0.6 ? 2 : 1)
-          message.content = fullContent.slice(0, index + chunkSize)
-          index += chunkSize
-
-          let delay = 20
-          if (fullContent[index - 1] === '，' || fullContent[index - 1] === '，') delay = 80
-          else if (fullContent[index - 1] === '。' || fullContent[index - 1] === '！' || fullContent[index - 1] === '？') delay = 120
-          else if (Math.random() > 0.9) delay = 60
-
-          this.$nextTick(() => this.scrollToBottom())
-          setTimeout(typeText, delay)
-        } else {
-          message.content = fullContent
-          this.isLoading = false
-          this.$nextTick(() => this.scrollToBottom())
-        }
-      }
-      typeText()
+    toggleThink(messageId) {
+      this.thinkExpanded[messageId] = !this.thinkExpanded[messageId]
     },
 
-    toggleThink(messageId) {
-      this.$set(this.thinkExpanded, messageId, !this.thinkExpanded[messageId])
+    toggleRetriever(messageId) {
+      this.retrieverExpanded[messageId] = !this.retrieverExpanded[messageId]
     },
 
     copyMessage(content) {
@@ -466,6 +450,14 @@ export default {
 
     renderMarkdown(content) {
       if (!content) return ''
+      // 配置marked选项，优化Markdown渲染
+      marked.setOptions({
+        breaks: true, // 支持换行
+        gfm: true, // 支持GitHub风格的Markdown
+        headerIds: true, // 为标题添加id
+        mangle: false, // 不混淆邮箱
+        sanitize: false // 不清理HTML，允许自定义标签
+      })
       return marked(content)
     },
 
@@ -1025,6 +1017,65 @@ export default {
   overflow: hidden;
 }
 
+.retriever-resources {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed #ebeef5;
+}
+
+.retriever-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #909399;
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.retriever-content {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.8;
+  background: #f4f4f5;
+  padding: 12px;
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  transition: all 0.3s ease;
+}
+
+.retriever-content.collapsed {
+  max-height: 0;
+  padding: 0 12px;
+  overflow: hidden;
+}
+
+.retriever-item {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.retriever-item:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.retriever-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 6px;
+}
+
+.retriever-item-content {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.6;
+}
+
 .message-files {
   margin-bottom: 12px;
   display: flex;
@@ -1298,6 +1349,99 @@ export default {
 
   ::-webkit-scrollbar-thumb:hover {
     background: #c0c4cc;
+  }
+
+  /* Markdown样式优化 */
+  .message-text :deep(p) {
+    margin: 10px 0;
+    line-height: 1.8;
+    font-size: 15px;
+  }
+
+  .message-text :deep(h1),
+  .message-text :deep(h2),
+  .message-text :deep(h3),
+  .message-text :deep(h4),
+  .message-text :deep(h5),
+  .message-text :deep(h6) {
+    margin: 16px 0 12px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .message-text :deep(h1) {
+    font-size: 24px;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 8px;
+  }
+
+  .message-text :deep(h2) {
+    font-size: 20px;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 6px;
+  }
+
+  .message-text :deep(h3) {
+    font-size: 18px;
+  }
+
+  .message-text :deep(ul),
+  .message-text :deep(ol) {
+    margin: 10px 0;
+    padding-left: 24px;
+  }
+
+  .message-text :deep(li) {
+    margin: 6px 0;
+    line-height: 1.6;
+  }
+
+  .message-text :deep(blockquote) {
+    margin: 12px 0;
+    padding: 12px 16px;
+    border-left: 4px solid #409EFF;
+    background-color: #f5f7fa;
+    border-radius: 4px;
+    font-style: italic;
+  }
+
+  .message-text :deep(code) {
+    background-color: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+  }
+
+  .message-text :deep(pre) {
+    margin: 12px 0;
+    padding: 16px;
+    background-color: #f5f5f5;
+    border-radius: 6px;
+    overflow-x: auto;
+  }
+
+  .message-text :deep(pre code) {
+    background-color: transparent;
+    padding: 0;
+    font-size: 13px;
+  }
+
+  .message-text :deep(a) {
+    color: #409EFF;
+    text-decoration: none;
+  }
+
+  .message-text :deep(a:hover) {
+    text-decoration: underline;
+  }
+
+  .message-text :deep(strong) {
+    font-weight: 600;
+  }
+
+  .message-text :deep(em) {
+    font-style: italic;
   }
 
   /* 响应式设计 */

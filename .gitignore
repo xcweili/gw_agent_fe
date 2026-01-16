@@ -1,4 +1,5 @@
 node_modules
 server/node_modules
 dist
-server/data
+server/data/acounts.json
+server/data/agents.json

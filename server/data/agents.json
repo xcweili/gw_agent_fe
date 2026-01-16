@@ -1,36 +1,25 @@
 [
   {
-    "name": "111",
-    "description": "111111",
+    "name": "长理问答robot",
+    "description": "长理知识库问答智能体，目前只支持单轮对话",
     "type": "general",
-    "apiUrl": "",
-    "apiKey": "",
+    "agentIdentifier": "cba39f04-f8d9-4bb1-90fa-971d3910e2fe",
     "icon": "",
-    "questions": [],
+    "questions": [
+      "校园卡丢失了怎么办",
+      "怎么申请国家奖学金",
+      "食堂啥时候可以吃饭",
+      "怎么坐校车"
+    ],
     "status": "online",
-    "id": "1767930401333",
-    "createdBy": "user",
-    "createdAt": "2026-01-09T03:46:41.333Z",
-    "usageCount": 0,
-    "createdByRole": "user",
-    "updatedAt": "2026-01-09T03:46:41.333Z"
-  },
-  {
-    "name": "222",
-    "description": "22222",
-    "type": "general",
-    "apiUrl": "",
-    "apiKey": "",
-    "icon": "",
-    "questions": [],
-    "status": "online",
-    "id": "1767930474408",
+    "isPublic": true,
+    "id": "1768554520820",
     "createdBy": "admin",
-    "createdAt": "2026-01-09T03:47:54.409Z",
+    "createdAt": "2026-01-16T09:08:40.820Z",
     "usageCount": 0,
+    "apiUrl": "http://10.255.216.2:8083/v1/workflows/run",
+    "apiKey": "app-eOFxeRHMBoEZWxX5y2aOVww9",
     "createdByRole": "admin",
-    "updatedAt": "2026-01-16T08:09:39.481Z",
-    "agentIdentifier": "test_id",
-    "isPublic": false
+    "updatedAt": "2026-01-16T09:10:46.249Z"
   }
 ]
