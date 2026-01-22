@@ -124,14 +124,31 @@
 
                   <div v-if="message.files && message.files.length > 0" class="message-files">
                     <div v-for="file in message.files" :key="file.name" class="file-item">
-                      <div v-if="file.type && file.type.startsWith('image/')" class="image-preview-container">
-                        <img v-if="file.data" :src="`data:${file.type};base64,${file.data}`" :alt="file.name" class="image-preview" />
-                        <el-icon v-else><Document /></el-icon>
+                      <div v-if="file.url" class="file-url-container">
+                        <div v-if="file.type === 'image'" class="image-preview-container">
+                          <img :src="file.url" :alt="file.name" class="image-preview" />
+                        </div>
+                        <div v-else class="file-preview-container">
+                          <el-icon><Document /></el-icon>
+                        </div>
+                        <div class="file-info">
+                          <span class="file-name">{{ file.name }}</span>
+                          <a :href="file.url" target="_blank" class="file-url-link">
+                            <el-icon><Link /></el-icon>
+                            打开链接
+                          </a>
+                        </div>
                       </div>
-                      <div v-else class="file-preview-container">
-                        <el-icon><Document /></el-icon>
+                      <div v-else class="file-local-container">
+                        <div v-if="file.type && (file.type.startsWith('image/') || file.type === 'image')" class="image-preview-container">
+                          <img v-if="file.preview" :src="file.preview" :alt="file.name" class="image-preview" />
+                          <el-icon v-else><Document /></el-icon>
+                        </div>
+                        <div v-else class="file-preview-container">
+                          <el-icon><Document /></el-icon>
+                        </div>
+                        <span class="file-name">{{ file.name }}</span>
                       </div>
-                      <span>{{ file.name }}</span>
                     </div>
                   </div>
 
@@ -162,16 +179,29 @@
           <div class="input-container">
             <!-- 已上传文件预览 -->
             <div class="uploaded-files-preview" v-if="uploadedFiles.length > 0">
-              <div v-for="(file, index) in uploadedFiles" :key="index" class="uploaded-file-item">
-                <template v-if="file.type && file.type.startsWith('image/')">
-                  <div class="image-preview-container">
-                    <img :src="file.preview || URL.createObjectURL(file.file)" :alt="file.name" class="image-preview" />
+              <div v-for="(file, index) in uploadedFiles" :key="index" class="uploaded-file-item" :class="{ 'has-url': file.url }">
+                <template v-if="file.url">
+                  <div v-if="file.type === 'image'" class="image-preview-container">
+                    <img :src="file.url" :alt="file.name" class="image-preview" />
+                  </div>
+                  <div v-else class="file-preview-container">
+                    <el-icon><Document /></el-icon>
+                  </div>
+                  <div class="file-info">
+                    <span class="file-name">{{ file.name }}</span>
+                    <span class="file-url-text">{{ truncateUrl(file.url) }}</span>
+                    <el-tag size="small" type="info" class="file-tag">URL</el-tag>
+                  </div>
+                </template>
+                <template v-else-if="file.file">
+                  <div v-if="file.type && (file.type.startsWith('image/') || file.type === 'image')" class="image-preview-container">
+                    <img :src="file.preview || (file.file ? URL.createObjectURL(file.file) : '')" :alt="file.name" class="image-preview" />
+                  </div>
+                  <div v-else class="file-preview-container">
+                    <el-icon><Document /></el-icon>
                   </div>
                   <span class="file-name">{{ file.name }}</span>
-                </template>
-                <template v-else>
-                  <el-icon><Document /></el-icon>
-                  <span class="file-name">{{ file.name }}</span>
+                  <el-tag size="small" type="success" class="file-tag">本地</el-tag>
                 </template>
                 <el-icon class="remove-file" @click="removeFile(index)"><Close /></el-icon>
               </div>
@@ -180,11 +210,23 @@
             <div class="chat-input-wrapper" @click="focusInput" @paste="handlePaste">
               <!-- 新增按钮（文件上传） -->
               <div class="input-actions-left">
-                <el-tooltip content="上传文件" placement="top">
-                  <div class="input-action-btn" @click.stop="triggerFileUpload">
+                <el-dropdown trigger="click" @command="handleFileAction">
+                  <div class="input-action-btn" @click.stop>
                     <el-icon><Plus /></el-icon>
                   </div>
-                </el-tooltip>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="upload">
+                        <el-icon><Upload /></el-icon>
+                        上传本地文件
+                      </el-dropdown-item>
+                      <el-dropdown-item command="url">
+                        <el-icon><Link /></el-icon>
+                        添加远程 URL
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
 
               <!-- 中间输入框 -->
@@ -210,7 +252,32 @@
       </template>
     </div>
 
-    <input ref="fileInput" type="file" style="display: none" @change="handleFileUpload" multiple accept=".txt,.md,.json,.csv,.xlsx,.doc,.docx,.pdf" />
+    <input ref="fileInput" type="file" style="display: none" @change="handleFileUpload" multiple accept=".txt,.md,.json,.csv,.xlsx,.doc,.docx,.pdf,image/*" />
+    
+    <el-dialog
+      v-model="showUrlDialog"
+      title="添加远程 URL"
+      width="500px"
+    >
+      <el-form label-position="top">
+        <el-form-item label="文件 URL">
+          <el-input
+            v-model="remoteFileUrl"
+            placeholder="请输入文件的远程 URL 地址"
+          />
+        </el-form-item>
+        <el-form-item label="文件类型">
+          <el-select v-model="remoteFileType" placeholder="选择文件类型" style="width: 100%;">
+            <el-option label="图片" value="image" />
+            <el-option label="文档" value="document" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showUrlDialog = false">取消</el-button>
+        <el-button type="primary" @click="addRemoteFile">添加</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -221,7 +288,9 @@ import {
   CopyDocument,
   Refresh,
   Plus,
-  Close
+  Close,
+  Upload,
+  Link
 } from '@element-plus/icons-vue'
 import { chatService } from '../services/chatService'
 import { backendService } from '../services/backendService'
@@ -235,7 +304,9 @@ export default {
     CopyDocument,
     Refresh,
     Plus,
-    Close
+    Close,
+    Upload,
+    Link
   },
   inject: {
     currentUser: { default: null }
@@ -255,7 +326,10 @@ export default {
       retrieverExpanded: {},
       uploadedFiles: [],
       recentAgents: [],
-      defaultIcon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzQwOUVGRiIvPjxwYXRoIGQ9Ik0xMiAyTDEzLjA5IDguMjZMMjAgOUwxMy4wOSAxNS43NEwxMiAyMkwxMC45MSAxNS43NEw0IDlMMTAuOTEgOC4yNkwxMiAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4='
+      defaultIcon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzQwOUVGRiIvPjxwYXRoIGQ9Ik0xMiAyTDEzLjA5IDguMjZMMjAgOUwxMy4wOSAxNS43NEwxMiAyMkwxMC45MSAxNS43NEw0IDlMMTAuOTEgOC4yNkwxMiAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=',
+      showUrlDialog: false,
+      remoteFileUrl: '',
+      remoteFileType: 'image'
     }
   },
   computed: {
@@ -269,9 +343,12 @@ export default {
   },
   watch: {
     selectedAgent: {
-      handler(newAgent) {
+      handler(newAgent, oldAgent) {
         if (newAgent) {
           this.loadRecentAgents()
+          if (oldAgent && oldAgent.id !== newAgent.id) {
+            chatService.resetChatflowConversation()
+          }
           this.startNewChat()
         }
       },
@@ -312,6 +389,7 @@ export default {
       this.thinkExpanded = {}
       this.retrieverExpanded = {}
       this.uploadedFiles = []
+      chatService.resetChatflowConversation()
     },
 
     handleShiftEnter(event) {
@@ -336,24 +414,24 @@ export default {
       this.uploadedFiles = []
 
       const messageId = Date.now()
-      // 为图片文件添加base64数据
-      const messageFiles = files.length > 0 ? await Promise.all(files.map(async f => {
-        if (f.type && f.type.startsWith('image/')) {
-          const base64Data = await this.fileToBase64(f.file)
-          return {
-            name: f.name,
-            size: f.size,
-            type: f.type,
-            data: base64Data
-          }
-        } else {
-          return {
-            name: f.name,
-            size: f.size,
-            type: f.type
-          }
+      // 准备文件信息用于显示，保留完整的文件信息
+      const messageFiles = files.length > 0 ? files.map(f => {
+        const fileData = {
+          name: f.name,
+          size: f.size,
+          type: f.type
         }
-      })) : null
+        
+        // 保留预览信息
+        if (f.preview) {
+          fileData.preview = f.preview
+        }
+        if (f.url) {
+          fileData.url = f.url
+        }
+        
+        return fileData
+      }) : null
 
       this.messages.push({
         id: messageId,
@@ -377,17 +455,14 @@ export default {
       this.$nextTick(() => this.scrollToBottom())
 
       try {
-        // 从消息中的files获取已转换好的base64图片
-        const base64Images = messageFiles ? messageFiles.filter(f => f.type && f.type.startsWith('image/')) : []
-
-        // 不使用await，因为chatService.sendMessage在流式模式下会立即返回
+        // 直接传递文件对象，chatService 会处理上传逻辑
         chatService.sendMessage({
           agent: this.selectedAgent,
           messages: this.messages.filter(m => m.id !== assistantMessageId),
           userInput: userMessage,
+          files: files,
           options: {
-            images: base64Images,
-            responseMode: 'streaming', // 默认使用streaming模式
+            responseMode: 'streaming',
             onChunk: (chunk) => {
               // 收到第一个chunk后，立即停止loading
               if (this.isLoading) {
@@ -474,15 +549,65 @@ export default {
       this.$refs.fileInput.click()
     },
 
+    handleFileAction(command) {
+      if (command === 'upload') {
+        this.triggerFileUpload()
+      } else if (command === 'url') {
+        this.showUrlDialog = true
+        this.remoteFileUrl = ''
+        this.remoteFileType = 'image'
+      }
+    },
+
+    addRemoteFile() {
+      if (!this.remoteFileUrl.trim()) {
+        this.$message.warning('请输入文件 URL')
+        return
+      }
+
+      try {
+        new URL(this.remoteFileUrl)
+      } catch {
+        this.$message.error('请输入有效的 URL')
+        return
+      }
+
+      const url = this.remoteFileUrl.trim()
+      const fileName = url.split('/').pop() || 'remote-file'
+      
+      this.uploadedFiles.push({
+        name: fileName,
+        type: this.remoteFileType,
+        url: url
+      })
+
+      this.showUrlDialog = false
+      this.remoteFileUrl = ''
+    },
+
     handleFileUpload(event) {
       const files = Array.from(event.target.files)
       files.forEach(file => {
-        this.uploadedFiles.push({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          file: file
-        })
+        if (file.type && file.type.startsWith('image/')) {
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            this.uploadedFiles.push({
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              file: file,
+              preview: e.target.result
+            })
+          }
+          reader.readAsDataURL(file)
+        } else {
+          this.uploadedFiles.push({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            file: file
+          })
+        }
       })
       event.target.value = ''
     },
@@ -510,6 +635,11 @@ export default {
         if (items[i].type.indexOf('image') !== -1) {
           const file = items[i].getAsFile()
           if (file) {
+            console.log('粘贴的图片文件:', {
+              name: file.name,
+              type: file.type,
+              size: file.size
+            })
             this.handlePastedImage(file)
           }
         }
@@ -519,28 +649,22 @@ export default {
     handlePastedImage(file) {
       const reader = new FileReader()
       reader.onload = (e) => {
-        this.uploadedFiles.push({
+        const fileData = {
           name: file.name || 'pasted-image.jpg',
           size: file.size,
           type: file.type,
           file: file,
           preview: e.target.result
-        })
+        }
+        console.log('添加到 uploadedFiles:', fileData)
+        this.uploadedFiles.push(fileData)
       }
       reader.readAsDataURL(file)
     },
 
-    fileToBase64(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          // 移除base64前缀，只保留数据部分
-          const base64Data = e.target.result.split(',')[1]
-          resolve(base64Data)
-        }
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
+    truncateUrl(url) {
+      if (!url) return ''
+      return url.length > 10 ? url.substring(0, 10) + '...' : url
     }
   }
 }
@@ -1098,6 +1222,57 @@ export default {
   color: #fff;
 }
 
+.file-url-container,
+.file-local-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-url-container {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.file-url-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(64, 158, 255, 0.1);
+  border-radius: 4px;
+  color: #409EFF;
+  text-decoration: none;
+  font-size: 12px;
+  transition: all 0.3s;
+}
+
+.file-url-link:hover {
+  background: rgba(64, 158, 255, 0.2);
+}
+
+.file-tag {
+  margin-left: auto;
+}
+
+.uploaded-file-item .file-tag {
+  margin-left: 4px;
+}
+
+.file-url-text {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 4px;
+  word-break: break-all;
+}
+
 .message-text {
   /* white-space: pre-wrap; */
   word-break: break-word;
@@ -1294,6 +1469,12 @@ export default {
   background: #f4f4f5;
   border-radius: 6px;
   font-size: 13px;
+  min-width: 200px;
+}
+
+.uploaded-file-item.has-url {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .remove-file {

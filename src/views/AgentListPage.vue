@@ -276,6 +276,14 @@
                 </el-form-item>
               </el-col>
               <el-col :span="12">
+                <el-form-item label="对话模式" prop="category">
+                  <el-select v-model="newAgent.category" placeholder="选择对话模式" style="width: 100%;">
+                    <el-option label="工作流模式 (Workflow)" value="workflow" />
+                    <el-option label="对话模式 (Chatflow)" value="chatflow" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
                 <el-form-item label="状态">
                   <el-switch
                     v-model="newAgent.status"
@@ -454,6 +462,9 @@ export default {
           { required: true, message: '请输入智能体标识', trigger: 'blur' },
           { min: 3, max: 50, message: '标识长度在 3-50 个字符', trigger: 'blur' },
           { pattern: /^[a-zA-Z0-9_-]+$/, message: '标识只能包含字母、数字、下划线和连字符', trigger: 'blur' }
+        ],
+        category: [
+          { required: true, message: '请选择对话模式', trigger: 'change' }
         ]
       },
       defaultIcon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzQwOUVGRiIvPjxwYXRoIGQ9Ik0xMiAyTDEzLjA5IDguMjZMMjAgOUwxMy4wOSAxNS43NEwxMiAyMkwxMC45MSAxNS43NEw0IDlMMTAuOTEgOC4yNkwxMiAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4='
@@ -615,7 +626,8 @@ export default {
         icon: '',
         questions: [''],
         status: 'online',
-        isPublic: false
+        isPublic: false,
+        category: 'workflow'
       }
       this.$refs.agentForm?.resetFields()
     },
@@ -636,7 +648,8 @@ export default {
         icon: agent.icon,
         questions: [...(agent.questions || [''])],
         status: agent.status || 'online',
-        isPublic: agent.isPublic || false
+        isPublic: agent.isPublic || false,
+        category: agent.category || 'workflow'
       }
       this.showCreateDialog = true
     },
@@ -675,7 +688,8 @@ export default {
               icon: this.newAgent.icon,
               questions: this.newAgent.questions.filter(q => q.trim()),
               status: this.newAgent.status,
-              isPublic: this.newAgent.isPublic
+              isPublic: this.newAgent.isPublic,
+              category: this.newAgent.category
             }
             
             await backendService.updateAgent(this.editingAgentId, agentData)
@@ -727,9 +741,13 @@ export default {
               createdBy: this.getCurrentUser()?.username,
               createdAt: new Date().toISOString(),
               usageCount: 0,
-              // 设置固定的API URL和API Key
-              apiUrl: 'http://10.255.216.2:8083/v1/workflows/run',
-              apiKey: 'app-eOFxeRHMBoEZWxX5y2aOVww9'
+              // 根据 category 设置不同的 API URL 和 API Key
+              apiUrl: this.newAgent.category === 'chatflow' 
+                ? 'http://10.255.216.2:8083/v1/chat-messages'
+                : 'http://10.255.216.2:8083/v1/workflows/run',
+              apiKey: this.newAgent.category === 'chatflow'
+                ? 'app-TvNkNNywLUxZW2iP6to8ORB2'
+                : 'app-eOFxeRHMBoEZWxX5y2aOVww9'
             }
             
             await backendService.createAgent(agentData)

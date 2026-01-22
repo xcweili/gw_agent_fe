@@ -4,16 +4,51 @@ class ChatService {
   constructor() {
     this.currentConversation = null
     this.userId = 'user_' + Date.now()
+    this.chatflowConversationId = null
+  }
+
+  async uploadFile(file, apiKey) {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    console.log('开始上传文件:', {
+      name: file.name,
+      type: file.type,
+      size: file.size
+    })
+
+    try {
+      const response = await axios.post('http://10.255.216.2:8083/v1/files/upload', formData, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`
+        }
+      })
+      console.log('文件上传成功，返回的文件ID:', response.data.id)
+      return response.data.id
+    } catch (error) {
+      console.error('文件上传失败:', error)
+      throw new Error(`文件上传失败: ${error.message}`)
+    }
   }
 
   async sendMessage({ agent, messages, userInput, files = [], options = {} }) {
+    const isChatflow = agent.category === 'chatflow'
+    
+    if (isChatflow) {
+      return this.sendChatflowMessage({ agent, userInput, files, options })
+    } else {
+      return this.sendWorkflowMessage({ agent, messages, userInput, files, options })
+    }
+  }
+
+  async sendWorkflowMessage({ agent, messages, userInput, files = [], options = {} }) {
     const apiUrl = agent.apiUrl || 'http://10.255.216.2:8083/v1/workflows/run'
     const apiKey = agent.apiKey || 'app-eOFxeRHMBoEZWxX5y2aOVww9'
     const responseMode = options.responseMode || 'streaming'
     const onChunk = options.onChunk
 
     try {
-      const requestBody = this.buildRequestBody(userInput, messages, files, options, agent)
+      const requestBody = this.buildWorkflowRequestBody(userInput, messages, files, options, agent)
 
       const headers = {
         'Authorization': `Bearer ${apiKey}`,
@@ -25,10 +60,7 @@ class ChatService {
       }
 
       if (responseMode === 'streaming') {
-        // 在streaming模式下，不等待请求完成，而是立即返回，同时在后台处理流式数据
-        // 这样onChunk回调可以实时被调用
         this.sendStreamingRequest(apiUrl, requestBody, headers, onChunk)
-        // 立即返回一个空的response，让前端知道请求已经开始
         return {
           content: '',
           think: null,
@@ -67,8 +99,65 @@ class ChatService {
     }
   }
 
-  buildRequestBody(userInput, messages, files, options = {}, agent = {}) {
-    // 严格遵循curl示例的格式，只包含必要的参数
+  async sendChatflowMessage({ agent, userInput, files = [], options = {} }) {
+    const apiUrl = agent.apiUrl || 'http://10.255.216.2:8083/v1/chat-messages'
+    const apiKey = agent.apiKey || 'app-TvNkNNywLUxZW2iP6to8ORB2'
+    const responseMode = options.responseMode || 'streaming'
+    const onChunk = options.onChunk
+
+    try {
+      const requestBody = await this.buildChatflowRequestBody(userInput, files, options, agent, apiKey)
+
+      const headers = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+
+      if (options.traceId) {
+        headers['X-Trace-Id'] = options.traceId
+      }
+
+      if (responseMode === 'streaming') {
+        this.sendStreamingRequest(apiUrl, requestBody, headers, onChunk, true)
+        return {
+          content: '',
+          think: null,
+          conversation_id: null,
+          message_id: null,
+          task_id: null,
+          usage: null,
+          retriever_resources: [],
+          response_mode: responseMode
+        }
+      } else {
+        const response = await axios.post(apiUrl, requestBody, {
+          headers,
+          timeout: options.timeout || 120000
+        })
+        const fullResponse = {
+          content: response.data.content || '抱歉，我无法生成合适的回答。',
+          think: response.data.think || null,
+          conversation_id: response.data.conversation_id,
+          message_id: response.data.message_id,
+          task_id: response.data.task_id,
+          usage: response.data.usage,
+          retriever_resources: response.data.retriever_resources,
+          response_mode: responseMode
+        }
+        
+        if (fullResponse.conversation_id) {
+          this.chatflowConversationId = fullResponse.conversation_id
+        }
+
+        return fullResponse
+      }
+    } catch (error) {
+      console.error('发送消息失败:', error)
+      throw new Error(`API请求失败: ${error.message}`)
+    }
+  }
+
+  async buildWorkflowRequestBody(userInput, messages, files, options = {}, agent = {}, apiKey) {
     const body = {
       inputs: {
         input: userInput
@@ -77,39 +166,81 @@ class ChatService {
       user: agent.agentIdentifier !== undefined ? agent.agentIdentifier : ''
     }
 
-    // 保持文件处理逻辑，但需要确认API是否支持
-    // 由于curl示例中没有文件参数，可能需要与后端确认是否支持
+    return body
+  }
+
+  getFileType(mimeType) {
+    if (!mimeType) return 'document'
+    
+    if (mimeType.startsWith('image/')) {
+      return 'image'
+    }
+    
+    if (mimeType === 'image') {
+      return 'image'
+    }
+    
+    if (mimeType === 'document') {
+      return 'document'
+    }
+    
+    return 'document'
+  }
+
+  async buildChatflowRequestBody(userInput, files, options = {}, agent = {}, apiKey) {
+    const body = {
+      response_mode: options.responseMode || 'streaming',
+      conversation_id: this.chatflowConversationId || '',
+      files: [],
+      query: userInput,
+      inputs: {},
+      parent_message_id: null,
+      user: agent.agentIdentifier || this.userId
+    }
+
     const allFiles = [...(files || []), ...(options.images || [])]
     if (allFiles.length > 0) {
-      body.files = allFiles.map(file => {
-        // 处理base64图片
-        if (file.data) {
-          return {
-            type: file.type,
-            transfer_method: 'data_url',
-            data: `data:${file.type};base64,${file.data}`
-          }
-        } 
-        // 处理普通文件
-        else {
-          // 确保transfer_method是有效的值
-          const validTransferMethods = ['remote_url', 'local_file']
-          const transferMethod = validTransferMethods.includes(file.transfer_method) ? file.transfer_method : 'remote_url'
-          
-          return {
-            type: file.type,
-            transfer_method: transferMethod,
-            url: transferMethod === 'remote_url' ? file.url : undefined,
-            upload_file_id: transferMethod === 'local_file' ? file.upload_file_id : undefined
-          }
+      const processedFiles = []
+      
+      for (const file of allFiles) {
+        if (file.file) {
+          const fileId = await this.uploadFile(file.file, apiKey)
+          processedFiles.push({
+            type: this.getFileType(file.type),
+            transfer_method: 'local_file',
+            url: '',
+            upload_file_id: fileId
+          })
+        } else if (file.url) {
+          processedFiles.push({
+            type: this.getFileType(file.type),
+            transfer_method: 'remote_url',
+            url: file.url,
+            upload_file_id: ''
+          })
+        } else if (file.upload_file_id) {
+          processedFiles.push({
+            type: this.getFileType(file.type),
+            transfer_method: 'local_file',
+            url: '',
+            upload_file_id: file.upload_file_id
+          })
         }
-      })
+      }
+      
+      if (processedFiles.length > 0) {
+        body.inputs.upload_file = processedFiles
+      }
     }
 
     return body
   }
 
-  async sendStreamingRequest(url, body, headers, onChunk) {
+  resetChatflowConversation() {
+    this.chatflowConversationId = null
+  }
+
+  async sendStreamingRequest(url, body, headers, onChunk, isChatflow = false) {
     // 直接处理流式请求，不返回Promise，确保后台运行
     fetch(url, {
       method: 'POST',
@@ -178,6 +309,11 @@ class ChatService {
                   } catch (e) {
                     console.error('数据不是有效的JSON格式:', dataStr)
                     continue
+                  }
+                  
+                  // 如果是 chatflow 模式，提取 conversation_id
+                  if (isChatflow && parsed.conversation_id) {
+                    this.chatflowConversationId = parsed.conversation_id
                   }
                   
                   // 使用processStreamData方法处理解析后的数据
